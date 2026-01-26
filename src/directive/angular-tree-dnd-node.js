@@ -84,10 +84,14 @@ angular.module('ntt.TreeDnD')
 
                 objexpr = '[' + objprops.join(',') + ']';
 
-                scope.$watch(objexpr, fnWatchNode, true);
+                var unwatchNode = scope.$watch(objexpr, fnWatchNode, true);
 
                 scope.$on('$destroy', function () {
+                    if (unwatchNode) {
+                        unwatchNode();
+                    }
                     scope.deleteScope(scope, scope[keyNode]);
+                    $TreeDnDViewport.remove(scope, element);
                 });
 
                 function fnWatchNode(newVal, oldVal, scope) {

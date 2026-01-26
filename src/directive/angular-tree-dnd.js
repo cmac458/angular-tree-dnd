@@ -712,6 +712,26 @@ function fnInitTreeDnD($timeout, $http, $compile, $parse, $window, $document, $t
             );
         }
 
+        $scope.$on('$destroy', function () {
+            if (timeReloadData) {
+                $timeout.cancel(timeReloadData);
+                timeReloadData = null;
+            }
+            tmpTreeData = null;
+            if ($scope.$globals) {
+                $scope.$globals = {};
+            }
+            if ($scope.placeElm) {
+                $scope.placeElm.remove();
+                $scope.placeElm = null;
+            }
+            if ($scope.statusElm) {
+                $scope.statusElm.remove();
+                $scope.statusElm = null;
+            }
+            $scope.tree_nodes = [];
+        });
+
         function timeLoadData() {
             $scope.treeData = tmpTreeData;
             reload_data();

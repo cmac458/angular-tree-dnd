@@ -18,6 +18,7 @@ function fnInitTreeDnDViewport($window, $document, $timeout, $q, $compile) {
             setViewport:   setViewport,
             getViewport:   getViewport,
             add:           add,
+            remove:        remove,
             setTemplate:   setTemplate,
             getItems:      getItems,
             updateDelayed: updateDelayed
@@ -130,6 +131,15 @@ function fnInitTreeDnDViewport($window, $document, $timeout, $q, $compile) {
             element: element,
             scope:   scope
         });
+    }
+
+    function remove(scope, element) {
+        var i = items.length;
+        while (i--) {
+            if (items[i].scope === scope || (element && items[i].element === element)) {
+                items.splice(i, 1);
+            }
+        }
     }
 
     function setTemplate(scope, template) {
