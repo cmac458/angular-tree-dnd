@@ -15,7 +15,7 @@ angular.module('template/TreeDnD/TreeDnD.html', []).run(
              '    </thead>',
              ' <tbody tree-dnd-nodes>',
              '  <tr tree-dnd-node="node" ng-repeat="node in tree_nodes track by node.__hashKey__" ',
-             '       ng-if="(node.__inited__ || node.__visible__)"',
+             '       ng-if="node.__visible__"',
              '       ng-click="onSelect(node)" ',
              '       ng-class="(node.__selected__ ? \' active\':\'\')">',
              '        <td tree-dnd-node-handle',

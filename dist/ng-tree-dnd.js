@@ -3361,7 +3361,7 @@ angular.module('ntt.TreeDnD')
                         if (_target) {
                             return tree.select_node(_target);
                         }
-                    }
+             '       ng-if="node.__visible__"',
                 },
                 select_prev_node:                  function (node) {
                     node = node || tree.selected_node;
