@@ -161,7 +161,8 @@ angular.module('ntt.TreeDnD')
                     keepAttr = [
                         '__expanded__'
                     ],
-                    lenKeep  = keepAttr.length;
+                            _hasChilds = _len > 0 || nodeOf.__has_children__ === true || nodeOf.__lazy__ === true,
+                        if (!_hasChilds) {
 
                 // skip __visible__
                 for (i = 0; i < lenO + lenKeep; i++) {
@@ -245,8 +246,8 @@ angular.module('ntt.TreeDnD')
 
                             if (nodeOf.__expanded__) {
                                 childsElem.removeClass(scope.$class.hidden);
-                            } else {
-                                childsElem.addClass(scope.$class.hidden);
+    '$timeout', '$http', '$compile', '$parse', '$window', '$document', '$templateCache', '$q',
+function fnInitTreeDnD($timeout, $http, $compile, $parse, $window, $document, $templateCache, $q,
                             }
                         }
 
@@ -364,7 +365,17 @@ function fnInitTreeDnD($timeout, $http, $compile, $parse, $window, $document, $t
         };
 
         $scope.onClick = function (node) {
-            if (angular.isDefined($scope.tree) && angular.isFunction($scope.tree.on_click)) {
+                if (node.__expanded__) {
+                    node.__expanded__ = false;
+                    return;
+                }
+
+                    node.__expanded__ = true;
+                    return;
+                }
+
+                if (nodeHasChildren(node) && angular.isFunction($scope.$callbacks.loadChildren)) {
+                    $scope.loadChildren(node);
                 // We want to detach from Angular's digest cycle so we can
                 // independently measure the time for one cycle.
                 setTimeout(
@@ -436,6 +447,9 @@ function fnInitTreeDnD($timeout, $http, $compile, $parse, $window, $document, $t
                     unit = $scope.indent_unit ? $scope.indent_unit : 'px';
                 }
 
+            loadChildren:        function () {
+                return null;
+            },
                 if (level - 1 < 1) {
                     return edge + unit;
                 } else {
@@ -489,6 +503,38 @@ function fnInitTreeDnD($timeout, $http, $compile, $parse, $window, $document, $t
                 // clearInfo
                 this.for_all_descendants(node, this.clearInfo);
                 if (parent) {
+        function nodeHasChildren(node) {
+            return (angular.isArray(node.__children__) && node.__children__.length > 0) ||
+                node.__has_children__ === true ||
+                node.__lazy__ === true;
+        }
+
+        $scope.loadChildren = function (node) {
+            if (!node || node.__loading__) {
+                return $q.when([]);
+            }
+
+            node.__loading__ = true;
+
+            return $q.when($scope.$callbacks.loadChildren(node)).then(
+                function (children) {
+                    if (angular.isArray(children)) {
+                        node.__children__ = children;
+                    } else if (!angular.isArray(node.__children__)) {
+                        node.__children__ = [];
+                    }
+
+                    node.__lazy__         = false;
+                    node.__has_children__ = node.__children__.length > 0;
+                    node.__expanded__     = node.__children__.length > 0;
+                    reload_data();
+                    return node.__children__;
+                }
+            ).finally(function () {
+                node.__loading__ = false;
+            });
+        };
+
                     if (parent.length > -1) {
                         if (pos > -1) {
                             parent.splice(pos, 0, node);
@@ -1111,8 +1157,10 @@ function fnInitTreeDnD($timeout, $http, $compile, $parse, $window, $document, $t
             }
         }
 
-        function getColDefs() {
-            // Auto get Defs except attribute __level__ ....
+            var _hasChildren = _len > 0 || node.__has_children__ === true || node.__lazy__ === true;
+
+            if (angular.isUndefinedOrNull(node.__expanded__) && _hasChildren) {
+            if (!_hasChildren) {
             if ($scope.treeData.length) {
                 var _col_defs = [], _firstNode = $scope.treeData[0],
                     _regex                     = new RegExp('(^__([a-zA-Z0-9_\-]*)__$|^' + $scope.expandingProperty + '$)'),
@@ -3354,7 +3402,7 @@ angular.module('template/TreeDnD/TreeDnD.html', []).run(
              '       ng-click="onSelect(node)" ',
              '       ng-class="(node.__selected__ ? \' active\':\'\')">',
              '        <td tree-dnd-node-handle',
-             '          ng-style="expandingProperty.cellStyle ? expandingProperty.cellStyle : {\'padding-left\': $callbacks.calsIndent(node.__level__)}"',
+})();
              '          ng-class="expandingProperty.cellClass"',
              '          compile="expandingProperty.cellTemplate">',
              '              <a data-nodrag>',

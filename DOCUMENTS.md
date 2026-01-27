@@ -282,6 +282,9 @@ $scope.$callbacks = {
 	beforeDrop:  function (event) {
 		return true;
 	},
+	loadChildren: function (node) {
+		// return array or promise resolved with children
+	},
 	calsIndent:  function (level) {
 		if (level - 1 < 1) {
 			return $scope.indent_plus + ($scope.indent_unit ? $scope.indent_unit : 'px');
@@ -294,6 +297,11 @@ $scope.$callbacks = {
 	}
 };
 ```
+
+* Lazy load children on expand:
+	* Set `node.__has_children__ = true` or `node.__lazy__ = true` on nodes that should show the expand icon before children are loaded.
+	* Provide `callbacks.loadChildren` to return an array or a promise that resolves to an array of children.
+	* Children are inserted into `node.__children__` and the tree is reloaded after load.
 * Functions extended in control (attribute 'tree-control'):
 
 ```html

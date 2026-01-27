@@ -111,6 +111,7 @@ angular.module('ntt.TreeDnD')
                             parentNode = scope.tree_nodes[parentReal] || null,
                             _childs    = nodeOf.__children__,
                             _len       = _childs.length,
+                            _hasChilds = _len > 0 || nodeOf.__has_children__ === true || nodeOf.__lazy__ === true,
                             _i;
 
                         if (!nodeOf.__inited__) {
@@ -134,7 +135,7 @@ angular.module('ntt.TreeDnD')
                             nodeOf.__visible__ = true;
                         }
 
-                        if (_len === 0) {
+                        if (!_hasChilds) {
                             _icon = -1;
                         } else {
                             if (nodeOf.__expanded__) {

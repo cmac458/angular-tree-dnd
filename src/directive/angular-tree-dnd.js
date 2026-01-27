@@ -3,11 +3,11 @@ angular.module('ntt.TreeDnD')
         'treeDnd', fnInitTreeDnD);
 
 fnInitTreeDnD.$inject = [
-    '$timeout', '$http', '$compile', '$parse', '$window', '$document', '$templateCache',
+    '$timeout', '$http', '$compile', '$parse', '$window', '$document', '$templateCache', '$q',
     '$TreeDnDTemplate', '$TreeDnDClass', '$TreeDnDHelper', '$TreeDnDPlugin', '$TreeDnDViewport'
 ];
 
-function fnInitTreeDnD($timeout, $http, $compile, $parse, $window, $document, $templateCache,
+function fnInitTreeDnD($timeout, $http, $compile, $parse, $window, $document, $templateCache, $q,
                        $TreeDnDTemplate, $TreeDnDClass, $TreeDnDHelper, $TreeDnDPlugin, $TreeDnDViewport) {
     return {
         restrict:   'E',
@@ -122,8 +122,18 @@ function fnInitTreeDnD($timeout, $http, $compile, $parse, $window, $document, $t
             }
 
             if (passedExpand) {
+                if (node.__expanded__) {
+                    node.__expanded__ = false;
+                    return;
+                }
+
                 if (node.__children__.length > 0) {
-                    node.__expanded__ = !node.__expanded__;
+                    node.__expanded__ = true;
+                    return;
+                }
+
+                if (nodeHasChildren(node) && angular.isFunction($scope.$callbacks.loadChildren)) {
+                    $scope.loadChildren(node);
                 }
             }
         };
@@ -192,6 +202,9 @@ function fnInitTreeDnD($timeout, $http, $compile, $parse, $window, $document, $t
                 this.for_all_descendants(_clone, this.changeKey);
                 return _clone;
             },
+            loadChildren:        function () {
+                return null;
+            },
             remove:              function (node, parent, _this, delayReload) {
                 var temp = parent.splice(node.__index__, 1)[0];
                 if (!delayReload) {
@@ -245,6 +258,38 @@ function fnInitTreeDnD($timeout, $http, $compile, $parse, $window, $document, $t
                 return $scope.$globals[_hash];
             }
             return $scope;
+        };
+
+        function nodeHasChildren(node) {
+            return (angular.isArray(node.__children__) && node.__children__.length > 0) ||
+                node.__has_children__ === true ||
+                node.__lazy__ === true;
+        }
+
+        $scope.loadChildren = function (node) {
+            if (!node || node.__loading__) {
+                return $q.when([]);
+            }
+
+            node.__loading__ = true;
+
+            return $q.when($scope.$callbacks.loadChildren(node)).then(
+                function (children) {
+                    if (angular.isArray(children)) {
+                        node.__children__ = children;
+                    } else if (!angular.isArray(node.__children__)) {
+                        node.__children__ = [];
+                    }
+
+                    node.__lazy__         = false;
+                    node.__has_children__ = node.__children__.length > 0;
+                    node.__expanded__     = node.__children__.length > 0;
+                    reload_data();
+                    return node.__children__;
+                }
+            ).finally(function () {
+                node.__loading__ = false;
+            });
         };
 
         if ($attrs.enableDrag || $attrs.enableDrop) {
@@ -888,11 +933,13 @@ function fnInitTreeDnD($timeout, $http, $compile, $parse, $window, $document, $t
             node.__parent__      = parent;
             _len                 = node.__children__.length;
 
-            if (angular.isUndefinedOrNull(node.__expanded__) && _len > 0) {
+            var _hasChildren = _len > 0 || node.__has_children__ === true || node.__lazy__ === true;
+
+            if (angular.isUndefinedOrNull(node.__expanded__) && _hasChildren) {
                 node.__expanded__ = level < $scope.expandLevel;
             }
 
-            if (_len === 0) {
+            if (!_hasChildren) {
                 _icon = -1;
             } else {
                 if (node.__expanded__) {
