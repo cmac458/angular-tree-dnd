@@ -181,10 +181,14 @@ angular.module('ntt.TreeDnD')
 
                 objexpr = '[' + objprops.join(',') + ']';
 
-                scope.$watch(objexpr, fnWatchNode, true);
+                var unwatchNode = scope.$watch(objexpr, fnWatchNode, true);
 
                 scope.$on('$destroy', function () {
+                    if (unwatchNode) {
+                        unwatchNode();
+                    }
                     scope.deleteScope(scope, scope[keyNode]);
+                    $TreeDnDViewport.remove(scope, element);
                 });
 
                 function fnWatchNode(newVal, oldVal, scope) {
@@ -267,6 +271,7 @@ angular.module('ntt.TreeDnD')
             }
         }]
     );
+
 
 angular.module('ntt.TreeDnD')
     .directive('treeDndNodes', function () {
@@ -1000,6 +1005,26 @@ function fnInitTreeDnD($timeout, $http, $compile, $parse, $window, $document, $t
             );
         }
 
+        $scope.$on('$destroy', function () {
+            if (timeReloadData) {
+                $timeout.cancel(timeReloadData);
+                timeReloadData = null;
+            }
+            tmpTreeData = null;
+            if ($scope.$globals) {
+                $scope.$globals = {};
+            }
+            if ($scope.placeElm) {
+                $scope.placeElm.remove();
+                $scope.placeElm = null;
+            }
+            if ($scope.statusElm) {
+                $scope.statusElm.remove();
+                $scope.statusElm = null;
+            }
+            $scope.tree_nodes = [];
+        });
+
         function timeLoadData() {
             $scope.treeData = tmpTreeData;
             reload_data();
@@ -1723,6 +1748,7 @@ function fnInitTreeDnDViewport($window, $document, $timeout, $q, $compile) {
             setViewport:   setViewport,
             getViewport:   getViewport,
             add:           add,
+            remove:        remove,
             setTemplate:   setTemplate,
             getItems:      getItems,
             updateDelayed: updateDelayed
@@ -1837,6 +1863,15 @@ function fnInitTreeDnDViewport($window, $document, $timeout, $q, $compile) {
         });
     }
 
+    function remove(scope, element) {
+        var i = items.length;
+        while (i--) {
+            if (items[i].scope === scope || (element && items[i].element === element)) {
+                items.splice(i, 1);
+            }
+        }
+    }
+
     function setTemplate(scope, template) {
         nodeTemplate = template;
     }
@@ -1849,6 +1884,7 @@ function fnInitTreeDnDViewport($window, $document, $timeout, $q, $compile) {
         return items;
     }
 }
+
 
 angular.module('ntt.TreeDnD')
     .factory('$TreeDnDFilter', [
