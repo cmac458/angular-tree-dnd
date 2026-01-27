@@ -774,6 +774,15 @@ function fnInitTreeDnD($timeout, $http, $compile, $parse, $window, $document, $t
                 $scope.statusElm.remove();
                 $scope.statusElm = null;
             }
+            if ($scope.tree_nodes && $scope.tree_nodes.length) {
+                var i, node;
+                for (i = 0; i < $scope.tree_nodes.length; i++) {
+                    node = $scope.tree_nodes[i];
+                    if (node) {
+                        clear_node_cache(node);
+                    }
+                }
+            }
             $scope.tree_nodes = [];
         });
 
@@ -1002,6 +1011,48 @@ function fnInitTreeDnD($timeout, $http, $compile, $parse, $window, $document, $t
             return data;
         }
 
+        function clear_node_cache(node) {
+            delete node.__inited__;
+            delete node.__visible__;
+            delete node.__index__;
+            delete node.__index_real__;
+            delete node.__level__;
+            delete node.__icon__;
+            delete node.__icon_class__;
+            delete node.__dept__;
+            delete node.__parent__;
+            delete node.__parent_real__;
+            delete node.__hashKey__;
+            delete node.__selected__;
+        }
+
+        function cleanup_removed_nodes(nextNodes) {
+            var nextHashes = Object.create(null),
+                prevNodes  = $scope.tree_nodes || [],
+                i, node, hash;
+
+            for (i = 0; i < nextNodes.length; i++) {
+                node = nextNodes[i];
+                if (node && node.__hashKey__) {
+                    nextHashes[node.__hashKey__] = true;
+                }
+            }
+
+            for (i = 0; i < prevNodes.length; i++) {
+                node = prevNodes[i];
+                if (!node) {
+                    continue;
+                }
+                hash = node.__hashKey__;
+                if (hash && !nextHashes[hash]) {
+                    if ($scope.$globals && $scope.$globals[hash]) {
+                        delete $scope.$globals[hash];
+                    }
+                    clear_node_cache(node);
+                }
+            }
+        }
+
         function reload_data(oData) {
             //removeIf(nodebug)
             console.time('Reload_Data');
@@ -1012,11 +1063,13 @@ function fnInitTreeDnD($timeout, $http, $compile, $parse, $window, $document, $t
                 _tree_nodes = [];
             if (angular.isDefined(oData)) {
                 if (!angular.isArray(oData) || oData.length === 0) {
+                    cleanup_removed_nodes([]);
                     return init_data([]);
                 } else {
                     _data = oData;
                 }
             } else if (!angular.isArray($scope.treeData) || $scope.treeData.length === 0) {
+                cleanup_removed_nodes([]);
                 return init_data([]);
             } else {
                 _data = $scope.treeData;
@@ -1061,6 +1114,7 @@ function fnInitTreeDnD($timeout, $http, $compile, $parse, $window, $document, $t
 
             }
 
+            cleanup_removed_nodes(_tree_nodes);
             init_data(_tree_nodes);
 
             //removeIf(nodebug)
