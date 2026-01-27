@@ -282,6 +282,9 @@ $scope.$callbacks = {
 	beforeDrop:  function (event) {
 		return true;
 	},
+	loadChildren: function (node) {
+		// return array or promise resolved with children
+	},
 	calsIndent:  function (level) {
 		if (level - 1 < 1) {
 			return $scope.indent_plus + ($scope.indent_unit ? $scope.indent_unit : 'px');
@@ -294,6 +297,30 @@ $scope.$callbacks = {
 	}
 };
 ```
+
+* Lazy load children on expand:
+	* Mark nodes that have unloaded children with `node.__has_children__ = true` or `node.__lazy__ = true` so the expand icon is shown.
+	* Provide `callbacks.loadChildren` to return an array (sync) or a promise that resolves to an array (async).
+	* When `loadChildren` resolves, children are inserted into `node.__children__`, the node expands, and the tree is reloaded.
+	* Example:
+	```js
+	$scope.tree_data = [{
+		title: 'Root',
+		__lazy__: true,
+		__children__: []
+	}];
+
+	$scope.callbacks = {
+		loadChildren: function (node) {
+			return $http.get('/api/tree/' + node.id + '/children').then(function (res) {
+				return res.data;
+			});
+		}
+	};
+	```
+	```html
+	<tree-dnd tree-data="tree_data" callbacks="callbacks"></tree-dnd>
+	```
 * Functions extended in control (attribute 'tree-control'):
 
 ```html
