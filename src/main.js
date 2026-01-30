@@ -35,7 +35,7 @@
 
     angular.isDefined = isDefined;
 
-    angular.module('ntt.TreeDnD', ['template/TreeDnD/TreeDnD.html'])
+    angular.module('ntt.TreeDnD', ['template/TreeDnD/TreeDnD.html', 'ui.scroll'])
         .constant('$TreeDnDClass', {
             tree:   'tree-dnd',
             empty:  'tree-dnd-empty',
