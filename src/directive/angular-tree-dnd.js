@@ -245,6 +245,9 @@ function fnInitTreeDnD($timeout, $http, $compile, $parse, $window, $document, $t
         };
 
         $scope.deleteScope = function (scope, node) {
+            if (!$scope.$globals || !node) {
+                return;
+            }
             var _hash = node.__hashKey__;
             if ($scope.$globals[_hash] && $scope.$globals[_hash] === scope) {
                 delete $scope.$globals[_hash];
