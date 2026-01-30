@@ -87,11 +87,37 @@ angular.module('ntt.TreeDnD')
                 var unwatchNode = scope.$watch(objexpr, fnWatchNode, true);
 
                 scope.$on('$destroy', function () {
+                    //removeIf(nodebug)
+                    console.log('Destroyed Node');
+                    //endRemoveIf(nodebug)
+
+                    // Deregister the watch first
                     if (unwatchNode) {
                         unwatchNode();
+                        unwatchNode = null;
                     }
+
+                    // Remove from scope cache
                     scope.deleteScope(scope, scope[keyNode]);
+
+                    // Remove from viewport
                     $TreeDnDViewport.remove(scope, element);
+
+                    // Clear the __inited__ flag on the node
+                    if (scope[keyNode]) {
+                        scope[keyNode].__inited__ = false;
+                    }
+
+                    // Clear element reference to allow DOM garbage collection
+                    scope.$element = null;
+
+                    // Clear cached child element reference
+                    childsElem = null;
+
+                    // Clear function references that may hold closures
+                    scope.getData = null;
+                    scope.getElementChilds = null;
+                    scope.getScopeNode = null;
                 });
 
                 function fnWatchNode(newVal, oldVal, scope) {

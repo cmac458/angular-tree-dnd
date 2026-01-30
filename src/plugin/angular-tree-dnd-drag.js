@@ -580,6 +580,11 @@ angular.module('ntt.TreeDnD')
 
             function _fnDragEnd(e, $params) {
                 e.preventDefault();
+
+                // Always unbind document listeners first to prevent leaks
+                // even if dragElm is null (edge case handling)
+                _fnUnbindDocumentListeners($params);
+
                 if ($params.dragElm) {
                     var _passed  = false,
                         _$scope  = $params.$scope,
@@ -644,17 +649,27 @@ angular.module('ntt.TreeDnD')
                 }
 
                 function clearData() {
-                    $params.dragInfo.target.hidePlace();
-                    $params.dragInfo.target.targeting = false;
+                    if ($params.dragInfo && $params.dragInfo.target) {
+                        $params.dragInfo.target.hidePlace();
+                        $params.dragInfo.target.targeting = false;
+                    }
 
                     $params.dragInfo = null;
-                    _$scope.$$apply  = false;
-                    _$scope.setDragging(null);
+                    if ($params.$scope) {
+                        $params.$scope.$$apply = false;
+                        $params.$scope.setDragging(null);
+                    }
                 }
+            }
 
-                angular.element($params.$document).unbind('touchend', $params.dragEndEvent); // Mobile
-                angular.element($params.$document).unbind('touchcancel', $params.dragEndEvent); // Mobile
-                angular.element($params.$document).unbind('touchmove', $params.dragMoveEvent); // Mobile
+            /**
+             * Unbind all document-level event listeners
+             * Separated into its own function to ensure proper cleanup
+             */
+            function _fnUnbindDocumentListeners($params) {
+                angular.element($params.$document).unbind('touchend', $params.dragEndEvent);
+                angular.element($params.$document).unbind('touchcancel', $params.dragEndEvent);
+                angular.element($params.$document).unbind('touchmove', $params.dragMoveEvent);
                 angular.element($params.$document).unbind('mouseup', $params.dragEndEvent);
                 angular.element($params.$document).unbind('mousemove', $params.dragMoveEvent);
                 angular.element($params.$window.document.body).unbind('mouseleave', $params.dragCancelEvent);
@@ -825,15 +840,49 @@ angular.module('ntt.TreeDnD')
                 //unbind handler that retains scope
                 scope.$on(
                     '$destroy', function () {
+                        // Unbind keyboard handlers
                         angular.element($window.document.body).unbind('keydown', keydownHandler);
                         angular.element($window.document.body).unbind('keyup', keyupHandler);
-                        if (scope.statusElm) {
-                            scope.statusElm.remove();
+
+                        // Unbind element drag listeners
+                        $params.element.unbind('touchstart mousedown');
+                        $params.element.unbind('touchend touchcancel mouseup');
+
+                        // Unbind any active document listeners (in case drag is in progress)
+                        _fnUnbindDocumentListeners($params);
+
+                        // Cancel any pending drag timer
+                        if ($params.dragTimer) {
+                            $timeout.cancel($params.dragTimer);
+                            $params.dragTimer = null;
                         }
 
+                        // Remove and clean up drag element if still present
+                        if ($params.dragElm) {
+                            $params.dragElm.remove();
+                            $params.dragElm = null;
+                        }
+
+                        // Clean up status element
+                        if (scope.statusElm) {
+                            scope.statusElm.remove();
+                            scope.statusElm = null;
+                        }
+
+                        // Clean up placeholder element
                         if (scope.placeElm) {
                             scope.placeElm.remove();
+                            scope.placeElm = null;
                         }
+
+                        // Clear dragInfo to break circular references
+                        $params.dragInfo = null;
+                        $params.pos = null;
+                        $params.placeElm = null;
+
+                        // Clear $params scope reference
+                        $params.$scope = null;
+                        $params.element = null;
                     }
                 );
             }

@@ -215,6 +215,13 @@ function fnInitTreeDnD($timeout, $http, $compile, $parse, $window, $document, $t
             clearInfo:           function (node) {
                 delete node.__inited__;
                 delete node.__visible__;
+                delete node.__icon__;
+                delete node.__icon_class__;
+                delete node.__level__;
+                delete node.__index__;
+                delete node.__index_real__;
+                delete node.__parent_real__;
+                delete node.__dept__;
 
                 // always changed after call reload_data
                 //delete node.__hashKey__;
@@ -570,6 +577,8 @@ function fnInitTreeDnD($timeout, $http, $compile, $parse, $window, $document, $t
                 beginAnd:   true
             },
             tree,
+            // Array to store watch deregistration functions for cleanup
+            _watchDeregistrations = [],
             _watches             = [
                 [
                     'enableDrag',
@@ -743,7 +752,8 @@ function fnInitTreeDnD($timeout, $http, $compile, $parse, $window, $document, $t
         }
 
         if ($attrs.treeData) {
-            $scope.$watch(
+            // Store deregistration function for treeData watch
+            var unwatchTreeData = $scope.$watch(
                 $attrs.treeData, function (val) {
                     if (angular.equals(val, $scope.treeData)) {
                         return;
@@ -755,21 +765,42 @@ function fnInitTreeDnD($timeout, $http, $compile, $parse, $window, $document, $t
                     }
                 }, true
             );
+            _watchDeregistrations.push(unwatchTreeData);
         }
 
         $scope.$on('$destroy', function () {
+            // Cancel any pending timeouts
             if (timeReloadData) {
                 $timeout.cancel(timeReloadData);
                 timeReloadData = null;
             }
             tmpTreeData = null;
-            if ($scope.$globals) {
-                $scope.$globals = {};
+
+            // Deregister all watches to prevent memory leaks
+            var i, len;
+            for (i = 0, len = _watchDeregistrations.length; i < len; i++) {
+                if (_watchDeregistrations[i]) {
+                    _watchDeregistrations[i]();
+                }
             }
+            _watchDeregistrations.length = 0;
+
+            // Clear all scope references in $globals
+            if ($scope.$globals) {
+                var keys = Object.keys($scope.$globals);
+                for (i = 0, len = keys.length; i < len; i++) {
+                    delete $scope.$globals[keys[i]];
+                }
+                $scope.$globals = null;
+            }
+
+            // Remove and clean up placeholder element
             if ($scope.placeElm) {
                 $scope.placeElm.remove();
                 $scope.placeElm = null;
             }
+
+            // Remove and clean up status element
             if ($scope.statusElm) {
                 $scope.statusElm.remove();
                 $scope.statusElm = null;
@@ -783,7 +814,28 @@ function fnInitTreeDnD($timeout, $http, $compile, $parse, $window, $document, $t
                     }
                 }
             }
-            $scope.tree_nodes = [];
+
+            // Clear tree node references
+            if ($scope.tree_nodes) {
+                $scope.tree_nodes.length = 0;
+                $scope.tree_nodes = null;
+            }
+
+            // Clear treeData references
+            if ($scope.treeData) {
+                $scope.treeData = null;
+            }
+
+            // Clear callbacks to break circular references
+            $scope.$callbacks = null;
+
+            // Clear column definitions
+            $scope.colDefinitions = null;
+
+            // Clear tree control reference
+            if (tree) {
+                tree = null;
+            }
         });
 
         function timeLoadData() {
@@ -843,7 +895,8 @@ function fnInitTreeDnD($timeout, $http, $compile, $parse, $window, $document, $t
                     return;//jmp
                 }
                 if (typeof $attrs[nameAttr] === 'string') {
-                    $scope.$watch(
+                    // Store deregistration function for cleanup
+                    var unwatchFn = $scope.$watch(
                         $attrs[nameAttr], function (val) {
                             if (typeof type === 'string' && typeof val === type ||
                                 angular.isArray(type) && type.indexOf(typeof val) > -1
@@ -862,6 +915,7 @@ function fnInitTreeDnD($timeout, $http, $compile, $parse, $window, $document, $t
                             }
                         }, true
                     );
+                    _watchDeregistrations.push(unwatchFn);
                 } else {
 
                     if (angular.isFunction(fnNotExist)) {
@@ -1002,9 +1056,18 @@ function fnInitTreeDnD($timeout, $http, $compile, $parse, $window, $document, $t
 
         function init_data(data) {
 
-            // clear memory
-            if (angular.isDefined($scope.tree_nodes)) {
-                delete $scope.tree_nodes;
+            // clear memory - properly clean up old nodes to prevent memory leaks
+            if (angular.isDefined($scope.tree_nodes) && $scope.tree_nodes) {
+                // Clear internal properties that may hold references
+                var i, len, node;
+                for (i = 0, len = $scope.tree_nodes.length; i < len; i++) {
+                    node = $scope.tree_nodes[i];
+                    if (node) {
+                        // Clear the __inited__ flag that creates circular references
+                        delete node.__inited__;
+                    }
+                }
+                $scope.tree_nodes.length = 0;
             }
 
             $scope.tree_nodes = data;
