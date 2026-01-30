@@ -52,6 +52,822 @@
                 '-1': 'glyphicon glyphicon-file'
             }
         });angular.module('ntt.TreeDnD')
+    .factory('$TreeDnDFilter', [
+        '$filter', function ($filter) {
+            return fnInitFilter;
+
+            function for_all_descendants(options, node, fieldChild, fnBefore, fnAfter, parentPassed) {
+                if (!angular.isFunction(fnBefore)) {
+                    return null;
+                }
+
+                var _i, _len, _nodes,
+                    _nodePassed   = fnBefore(options, node),
+                    _childPassed  = false,
+                    _filter_index = options.filter_index;
+
+                if (angular.isDefined(node[fieldChild])) {
+                    _nodes = node[fieldChild];
+                    _len   = _nodes.length;
+
+                    options.filter_index = 0;
+                    for (_i = 0; _i < _len; _i++) {
+                        _childPassed = for_all_descendants(
+                            options,
+                            _nodes[_i],
+                            fieldChild,
+                            fnBefore,
+                            fnAfter,
+                            _nodePassed || parentPassed
+                        ) || _childPassed;
+                    }
+
+                    // restore filter_index of node
+                    options.filter_index = _filter_index;
+                }
+
+                if (angular.isFunction(fnAfter)) {
+                    fnAfter(options, node, _nodePassed === true, _childPassed === true, parentPassed === true);
+                }
+
+                return _nodePassed || _childPassed;
+            }
+
+            /**
+             * Check data with callback
+             * @param {string|object|function|regex} callback
+             * @param {*} data
+             * @returns {null|boolean}
+             * @private
+             */
+            function _fnCheck(callback, data) {
+                if (angular.isUndefinedOrNull(data) || angular.isArray(data)) {
+                    return null;
+                }
+
+                if (angular.isFunction(callback)) {
+                    return callback(data, $filter);
+                } else {
+                    if (typeof callback === 'boolean') {
+                        data = !!data;
+                        return data === callback;
+                    } else if (angular.isDefined(callback)) {
+                        try {
+                            var _regex = new RegExp(callback);
+                            return _regex.test(data);
+                        }
+                        catch (err) {
+                            if (typeof data === 'string') {
+                                return data.indexOf(callback) > -1;
+                            } else {
+                                return null;
+                            }
+                        }
+                    } else {
+                        return null;
+                    }
+                }
+            }
+
+            /**
+             * `fnProcess` to call `_fnCheck`. If `condition` is `array` then call `for_each_filter`
+             * else will call `_fnCheck`. Specical `condition.field` is `_$` then apply `condition.callback` for all field, if have `field` invaild then `return true`.
+             *
+             * @param node
+             * @param condition
+             * @param isAnd
+             * @returns {null|boolean}
+             * @private
+             */
+            function _fnProccess(node, condition, isAnd) {
+                if (angular.isArray(condition)) {
+                    return for_each_filter(node, condition, isAnd);
+                } else {
+                    var _key      = condition.field,
+                        _callback = condition.callback,
+                        _iO, _keysO, _lenO;
+
+                    if (_key === '_$') {
+                        _keysO = Object.keys(node);
+                        _lenO  = _keysO.length;
+                        for (_iO = 0; _iO < _lenO; _iO++) {
+                            if (_fnCheck(_callback, node[_keysO[_iO]])) {
+                                return true;
+                            }
+                        }
+                    } else if (angular.isDefined(node[_key])) {
+                        return _fnCheck(_callback, node[_key]);
+                    }
+                }
+                return null;
+            }
+
+            /**
+             *
+             * @param {object} node
+             * @param {array} conditions Array `conditions`
+             * @param {boolean} isAnd check with condition `And`, if `And` then `return false` when all `false`
+             * @returns {null|boolean}
+             */
+            function for_each_filter(node, conditions, isAnd) {
+                var i, len = conditions.length || 0, passed = false;
+                if (len === 0) {
+                    return null;
+                }
+
+                for (i = 0; i < len; i++) {
+                    if (_fnProccess(node, conditions[i], !isAnd)) {
+                        passed = true;
+                        // if condition `or` then return;
+                        if (!isAnd) {
+                            return true;
+                        }
+                    } else {
+
+                        // if condition `and` and result in fnProccess = false then return;
+                        if (isAnd) {
+                            return false;
+                        }
+                    }
+                }
+
+                return passed;
+            }
+
+            /**
+             * Will call _fnAfter to clear data no need
+             * @param {object} options
+             * @param {object} node
+             * @param {boolean} isNodePassed
+             * @param {boolean} isChildPassed
+             * @param {boolean} isParentPassed
+             * @private
+             */
+            function _fnAfter(options, node, isNodePassed, isChildPassed, isParentPassed) {
+                if (isNodePassed === true) {
+                    node.__filtered__         = true;
+                    node.__filtered_visible__ = true;
+                    node.__filtered_index__   = options.filter_index++;
+                    return; //jmp
+                } else if (isChildPassed === true && options.showParent === true
+                    || isParentPassed === true && options.showChild === true) {
+                    node.__filtered__         = false;
+                    node.__filtered_visible__ = true;
+                    node.__filtered_index__   = options.filter_index++;
+                    return; //jmp
+                }
+
+                // remove attr __filtered__
+                delete node.__filtered__;
+                delete node.__filtered_visible__;
+                delete node.__filtered_index__;
+            }
+
+            /**
+             * `fnBefore` will called when `for_all_descendants` of `node` checking.
+             * If `filter` empty then return `true` else result of function `_fnProccess` {@see _fnProccess}
+             *
+             * @param {object} options
+             * @param {object} node
+             * @returns {null|boolean}
+             * @private
+             */
+            function _fnBefore(options, node) {
+                if (options.filter.length === 0) {
+                    return true;
+                } else {
+                    return _fnProccess(node, options.filter, options.beginAnd || false);
+                }
+            }
+
+            /**
+             * `fnBeforeClear` will called when `for_all_descendants` of `node` checking.
+             * Alway false to Clear Filter empty
+             *
+             * @param {object} options
+             * @param {object} node
+             * @returns {null|boolean}
+             * @private
+             */
+            function _fnBeforeClear(options, node) {
+                return false;
+            }
+
+            /**
+             * `_fnConvert` to convert `filter` `object` to `array` invaild.
+             *
+             * @param {object|array} filters
+             * @returns {array} Instead of `filter` or new array invaild *(converted from filter)*
+             * @private
+             */
+            function _fnConvert(filters) {
+                var _iF, _lenF, _keysF,
+                    _filter,
+                    _state;
+                // convert filter object to array filter
+                if (angular.isObject(filters) && !angular.isArray(filters)) {
+                    _keysF  = Object.keys(filters);
+                    _lenF   = _keysF.length;
+                    _filter = [];
+
+                    if (_lenF > 0) {
+                        for (_iF = 0; _iF < _lenF; _iF++) {
+
+                            if (typeof filters[_keysF[_iF]] === 'string' && filters[_keysF[_iF]].length === 0) {
+                                continue;
+                            } else if (angular.isArray(filters[_keysF[_iF]])) {
+                                _state = filters[_keysF[_iF]];
+                            } else if (angular.isObject(filters[_keysF[_iF]])) {
+                                _state = _fnConvert(filters[_keysF[_iF]]);
+                            } else {
+                                _state = {
+                                    field:    _keysF[_iF],
+                                    callback: filters[_keysF[_iF]]
+                                };
+                            }
+                            _filter.push(_state);
+                        }
+                    }
+                    _state = null;
+                    return _filter;
+                }
+                else {
+                    return filters;
+                }
+            }
+
+            /**
+             * `fnInitFilter` function is constructor of service `$TreeDnDFilter`.
+             * @constructor
+             * @param {object|array} treeData
+             * @param {object|array} filters
+             * @param {object} options
+             * @param {string} keyChild
+             * @returns {array} Return `treeData` or `treeData` with `filter`
+             * @private
+             */
+            function fnInitFilter(treeData, filters, options, keyChild) {
+                if (!angular.isArray(treeData)
+                    || treeData.length === 0) {
+                    return treeData;
+                }
+
+                var _i, _len,
+                    _filter;
+
+                _filter = _fnConvert(filters);
+                if (!(angular.isArray(_filter) || angular.isObject(_filter))
+                    || _filter.length === 0) {
+                    for (_i = 0, _len = treeData.length; _i < _len; _i++) {
+                        for_all_descendants(
+                            options,
+                            treeData[_i],
+                            keyChild || '__children__',
+                            _fnBeforeClear, _fnAfter
+                        );
+                    }
+                    return treeData;
+                }
+
+                options.filter       = _filter;
+                options.filter_index = 0;
+                for (_i = 0, _len = treeData.length; _i < _len; _i++) {
+                    for_all_descendants(
+                        options,
+                        treeData[_i],
+                        keyChild || '__children__',
+                        _fnBefore, _fnAfter
+                    );
+                }
+
+                return treeData;
+            }
+
+        }]
+    );
+
+angular.module('ntt.TreeDnD')
+    .factory('$TreeDnDOrderBy', [
+        '$filter',
+        function ($filter) {
+            var _fnOrderBy          = $filter('orderBy'),
+                for_all_descendants = function for_all_descendants(options, node, name, fnOrderBy) {
+                    var _i, _len, _nodes;
+
+                    if (angular.isDefined(node[name])) {
+                        _nodes = node[name];
+                        _len   = _nodes.length;
+                        // OrderBy children
+                        for (_i = 0; _i < _len; _i++) {
+                            _nodes[_i] = for_all_descendants(options, _nodes[_i], name, fnOrderBy);
+                        }
+
+                        node[name] = fnOrderBy(node[name], options);
+                    }
+                    return node;
+                },
+                _fnOrder            = function _fnOrder(list, orderBy) {
+                    return _fnOrderBy(list, orderBy);
+                },
+                _fnMain             = function _fnMain(treeData, orderBy) {
+                    if (!angular.isArray(treeData)
+                        || treeData.length === 0
+                        || !(angular.isArray(orderBy) || angular.isObject(orderBy) || angular.isString(orderBy) || angular.isFunction(orderBy))
+                        || orderBy.length === 0 && !angular.isFunction(orderBy)) {
+                        return treeData;
+                    }
+
+                    var _i, _len;
+
+                    for (_i = 0, _len = treeData.length; _i < _len; _i++) {
+                        treeData[_i] = for_all_descendants(
+                            orderBy,
+                            treeData[_i],
+                            '__children__',
+                            _fnOrder
+                        );
+                    }
+
+                    return _fnOrder(treeData, orderBy);
+                };
+
+            return _fnMain;
+        }]
+    );
+
+angular.module('ntt.TreeDnD')
+    .factory('$TreeDnDConvert', function () {
+        var _$initConvert = {
+            line2tree: function (data, primaryKey, parentKey, callback) {
+                callback = typeof callback === 'function' ? callback : function () {
+                };
+                if (!data || data.length === 0 || !primaryKey || !parentKey) {
+                    return [];
+                }
+                var tree     = [],
+                    rootIds  = [],
+                    item     = data[0],
+                    _primary = item[primaryKey],
+                    treeObjs = {},
+                    parentId, parent,
+                    len      = data.length,
+                    i        = 0;
+
+                while (i < len) {
+                    item = data[i++];
+                    callback(item);
+                    _primary           = item[primaryKey];
+                    treeObjs[_primary] = item;
+                }
+                i = 0;
+                while (i < len) {
+                    item = data[i++];
+                    callback(item);
+                    _primary           = item[primaryKey];
+                    treeObjs[_primary] = item;
+                    parentId           = item[parentKey];
+                    if (parentId) {
+                        parent = treeObjs[parentId];
+                        if (parent) {
+                            if (parent.__children__) {
+                                parent.__children__.push(item);
+                            } else {
+                                parent.__children__ = [item];
+                            }
+                        }
+                    } else {
+                        rootIds.push(_primary);
+                    }
+                }
+                len = rootIds.length;
+                for (i = 0; i < len; i++) {
+                    tree.push(treeObjs[rootIds[i]]);
+                }
+                return tree;
+            },
+            tree2tree: function access_child(data, containKey, callback) {
+                callback  = typeof callback === 'function' ? callback : function () {
+                };
+                var _tree = [],
+                    _i,
+                    _len  = data ? data.length : 0,
+                    _copy, _child;
+                for (_i = 0; _i < _len; _i++) {
+                    _copy = angular.copy(data[_i]);
+                    callback(_copy);
+                    if (angular.isArray(_copy[containKey]) && _copy[containKey].length > 0) {
+                        _child = access_child(_copy[containKey], containKey, callback);
+                        delete _copy[containKey];
+                        _copy.__children__ = _child;
+                    }
+                    _tree.push(_copy);
+                }
+                return _tree;
+            }
+        };
+
+        return _$initConvert;
+    });
+
+angular.module('ntt.TreeDnD')
+    .factory('$TreeDnDHelper', [
+        '$document', '$window',
+        function ($document, $window) {
+            var _$helper = {
+                nodrag:          function (targetElm) {
+                    return typeof targetElm.attr('data-nodrag') !== 'undefined';
+                },
+                eventObj:        function (e) {
+                    var obj = e;
+                    if (e.targetTouches !== undefined) {
+                        obj = e.targetTouches.item(0);
+                    } else if (e.originalEvent !== undefined && e.originalEvent.targetTouches !== undefined) {
+                        obj = e.originalEvent.targetTouches.item(0);
+                    }
+                    return obj;
+                },
+                dragInfo:        function (scope) {
+                    var _node   = scope.getData(),
+                        _tree   = scope.getScopeTree(),
+                        _parent = scope.getNode(_node.__parent_real__);
+
+                    return {
+                        node:    _node,
+                        parent:  _parent,
+                        move:    {
+                            parent: _parent,
+                            pos:    _node.__index__
+                        },
+                        scope:   scope,
+                        target:  _tree,
+                        drag:    _tree,
+                        drop:    scope.getPrevSibling(_node),
+                        changed: false
+                    };
+                },
+                height:          function (element) {
+                    return element.prop('scrollHeight');
+                },
+                width:           function (element) {
+                    return element.prop('scrollWidth');
+                },
+                offset:          function (element) {
+                    var boundingClientRect = element[0].getBoundingClientRect();
+                    return {
+                        width:  element.prop('offsetWidth'),
+                        height: element.prop('offsetHeight'),
+                        top:    boundingClientRect.top + ($window.pageYOffset || $document[0].body.scrollTop || $document[0].documentElement.scrollTop),
+                        left:   boundingClientRect.left + ($window.pageXOffset || $document[0].body.scrollLeft || $document[0].documentElement.scrollLeft)
+                    };
+                },
+                positionStarted: function (e, target) {
+                    return {
+                        offsetX:  e.pageX - this.offset(target).left,
+                        offsetY:  e.pageY - this.offset(target).top,
+                        startX:   e.pageX,
+                        lastX:    e.pageX,
+                        startY:   e.pageY,
+                        lastY:    e.pageY,
+                        nowX:     0,
+                        nowY:     0,
+                        distX:    0,
+                        distY:    0,
+                        dirAx:    0,
+                        dirX:     0,
+                        dirY:     0,
+                        lastDirX: 0,
+                        lastDirY: 0,
+                        distAxX:  0,
+                        distAxY:  0
+                    };
+                },
+                positionMoved:   function (e, pos, firstMoving) {
+                    // mouse position last events
+                    pos.lastX = pos.nowX;
+                    pos.lastY = pos.nowY;
+
+                    // mouse position this events
+                    pos.nowX = e.pageX;
+                    pos.nowY = e.pageY;
+
+                    // distance mouse moved between events
+                    pos.distX = pos.nowX - pos.lastX;
+                    pos.distY = pos.nowY - pos.lastY;
+
+                    // direction mouse was moving
+                    pos.lastDirX = pos.dirX;
+                    pos.lastDirY = pos.dirY;
+
+                    // direction mouse is now moving (on both axis)
+                    pos.dirX = pos.distX === 0 ? 0 : pos.distX > 0 ? 1 : -1;
+                    pos.dirY = pos.distY === 0 ? 0 : pos.distY > 0 ? 1 : -1;
+
+                    // axis mouse is now moving on
+                    var newAx = Math.abs(pos.distX) > Math.abs(pos.distY) ? 1 : 0;
+
+                    // do nothing on first move
+                    if (firstMoving) {
+                        pos.dirAx  = newAx;
+                        pos.moving = true;
+                        return;
+                    }
+
+                    // calc distance moved on this axis (and direction)
+                    if (pos.dirAx !== newAx) {
+                        pos.distAxX = 0;
+                        pos.distAxY = 0;
+                    } else {
+                        pos.distAxX += Math.abs(pos.distX);
+                        if (pos.dirX !== 0 && pos.dirX !== pos.lastDirX) {
+                            pos.distAxX = 0;
+                        }
+                        pos.distAxY += Math.abs(pos.distY);
+                        if (pos.dirY !== 0 && pos.dirY !== pos.lastDirY) {
+                            pos.distAxY = 0;
+                        }
+                    }
+                    pos.dirAx = newAx;
+                },
+                replaceIndent:   function (scope, element, indent, attr) {
+                    attr = attr || 'left';
+                    angular.element(element.children()[0]).css(attr, scope.$callbacks.calsIndent(indent));
+                }
+            };
+
+            return _$helper;
+        }]
+    );
+
+angular.module('ntt.TreeDnD')
+    .factory('$TreeDnDPlugin', [
+        '$injector',
+        function ($injector) {
+            var _fnget = function (name) {
+                if (angular.isDefined($injector) && $injector.has(name)) {
+                    return $injector.get(name);
+                }
+                return null;
+            };
+            return _fnget;
+        }]
+    );
+
+angular.module('ntt.TreeDnD')
+    .factory('$TreeDnDTemplate', [
+        '$templateCache',
+        function ($templateCache) {
+            var templatePath = 'template/TreeDnD/TreeDnD.html',
+                copyPath     = 'template/TreeDnD/TreeDnDStatusCopy.html',
+                movePath     = 'template/TreeDnD/TreeDnDStatusMove.html',
+                scopes       = {},
+                temp,
+                _$init       = {
+                    setMove: function (path, scope) {
+                        if (!scopes[scope.$id]) {
+                            scopes[scope.$id] = {};
+                        }
+                        scopes[scope.$id].movePath = path;
+                    },
+                    setCopy: function (path, scope) {
+                        if (!scopes[scope.$id]) {
+                            scopes[scope.$id] = {};
+                        }
+                        scopes[scope.$id].copyPath = path;
+                    },
+                    getPath: function () {
+                        return templatePath;
+                    },
+                    getCopy: function (scope) {
+                        if (scopes[scope.$id] && scopes[scope.$id].copyPath) {
+                            temp = $templateCache.get(scopes[scope.$id].copyPath);
+                            if (temp) {
+                                return temp;
+                            }
+                        }
+                        return $templateCache.get(copyPath);
+                    },
+                    getMove: function (scope) {
+                        if (scopes[scope.$id] && scopes[scope.$id].movePath) {
+                            temp = $templateCache.get(scopes[scope.$id].movePath);
+                            if (temp) {
+                                return temp;
+                            }
+                        }
+                        return $templateCache.get(movePath);
+                    }
+                };
+
+            return _$init;
+        }]
+    );
+
+angular.module('ntt.TreeDnD')
+    .factory('$TreeDnDViewport', fnInitTreeDnDViewport);
+
+fnInitTreeDnDViewport.$inject = ['$window', '$document', '$timeout', '$q', '$compile'];
+
+function fnInitTreeDnDViewport($window, $document, $timeout, $q, $compile) {
+
+    var viewport      = null,
+        isUpdating    = false,
+        isRender      = false,
+        updateAgain   = false,
+        viewportRect,
+        items         = [],
+        nodeTemplate,
+        updateTimeout,
+        renderTime,
+        windowListenersBound = false,
+        $initViewport = {
+            setViewport:   setViewport,
+            getViewport:   getViewport,
+            add:           add,
+            remove:        remove,
+            setTemplate:   setTemplate,
+            getItems:      getItems,
+            updateDelayed: updateDelayed,
+            destroy:       destroy
+        },
+        eWindow       = angular.element($window);
+
+    return $initViewport;
+
+    /**
+     * Bind window event listeners (lazily on first add)
+     */
+    function bindWindowListeners() {
+        if (!windowListenersBound) {
+            eWindow.on('load resize scroll', updateDelayed);
+            windowListenersBound = true;
+        }
+    }
+
+    /**
+     * Unbind window event listeners and clean up resources
+     */
+    function destroy() {
+        if (windowListenersBound) {
+            eWindow.off('load resize scroll', updateDelayed);
+            windowListenersBound = false;
+        }
+
+        // Cancel any pending timeouts
+        if (updateTimeout) {
+            $timeout.cancel(updateTimeout);
+            updateTimeout = null;
+        }
+        if (renderTime) {
+            $timeout.cancel(renderTime);
+            renderTime = null;
+        }
+
+        // Clear all item references
+        items.length = 0;
+        viewport = null;
+        nodeTemplate = null;
+        isUpdating = false;
+        isRender = false;
+        updateAgain = false;
+    }
+
+    function update() {
+
+        viewportRect = {
+            width:  eWindow.prop('offsetWidth') || document.documentElement.clientWidth,
+            height: eWindow.prop('offsetHeight') || document.documentElement.clientHeight,
+            top:    $document[0].body.scrollTop || $document[0].documentElement.scrollTop,
+            left:   $document[0].body.scrollLeft || $document[0].documentElement.scrollLeft
+        };
+
+        if (isUpdating || isRender) {
+            updateAgain = true;
+            return;
+        }
+        isUpdating = true;
+
+        recursivePromise();
+    }
+
+    function recursivePromise() {
+        if (isRender) {
+            return;
+        }
+
+        var number = number > 0 ? number : items.length, item;
+
+        if (number > 0) {
+            item = items[0];
+
+            isRender   = true;
+            renderTime = $timeout(function () {
+                //item.element.html(nodeTemplate);
+                //$compile(item.element.contents())(item.scope);
+
+                items.splice(0, 1);
+                isRender = false;
+                number--;
+                $timeout.cancel(renderTime);
+                recursivePromise();
+            }, 0);
+
+        } else {
+            isUpdating = false;
+            if (updateAgain) {
+                updateAgain = false;
+                update();
+            }
+        }
+
+    }
+
+    /**
+     * Check if a point is inside specified bounds
+     * @param x
+     * @param y
+     * @param bounds
+     * @returns {boolean}
+     */
+    function pointIsInsideBounds(x, y, bounds) {
+        return x >= bounds.left &&
+            y >= bounds.top &&
+            x <= bounds.left + bounds.width &&
+            y <= bounds.top + bounds.height;
+    }
+
+    /**
+     * @name setViewport
+     * @desciption Set the viewport element
+     * @param element
+     */
+    function setViewport(element) {
+        viewport = element;
+    }
+
+    /**
+     * Return the current viewport
+     * @returns {*}
+     */
+    function getViewport() {
+        return viewport;
+    }
+
+    /**
+     * trigger an update
+     */
+    function updateDelayed() {
+        $timeout.cancel(updateTimeout);
+        updateTimeout = $timeout(function () {
+            update();
+        }, 0);
+    }
+
+    /**
+     * Add listener for event
+     * @param element
+     * @param callback
+     */
+    function add(scope, element) {
+        // Lazily bind window listeners on first add
+        bindWindowListeners();
+        updateDelayed();
+        items.push({
+            element: element,
+            scope:   scope
+        });
+    }
+
+    function remove(scope, element) {
+        var i = items.length;
+        while (i--) {
+            if (items[i].scope === scope || (element && items[i].element === element)) {
+                // Clear references before removing
+                items[i].scope = null;
+                items[i].element = null;
+                items.splice(i, 1);
+            }
+        }
+        // Auto-cleanup: unbind window listeners when no items remain
+        if (items.length === 0 && windowListenersBound) {
+            eWindow.off('load resize scroll', updateDelayed);
+            windowListenersBound = false;
+        }
+    }
+
+    function setTemplate(scope, template) {
+        nodeTemplate = template;
+    }
+
+    /**
+     * Get list of items
+     * @returns {Array}
+     */
+    function getItems() {
+        return items;
+    }
+}
+
+
+angular.module('ntt.TreeDnD')
     .directive('compile', [
         '$compile',
         function ($compile) {
@@ -112,19 +928,7 @@
     );
 
 
-angular.module('ntt.TreeDnD')
-    .directive('treeDndNodeHandle', function () {
-        return {
-            restrict: 'A',
-            scope:    true,
-            link:     function (scope, element/*, attrs*/) {
-                scope.$type = 'TreeDnDNodeHandle';
-                if (scope.$class.handle) {
-                    element.addClass(scope.$class.handle);
-                }
-            }
-        };
-    });
+angular.module('ntt.TreeDnD')    .directive('treeDndNodeHandle', function () {        return {            restrict: 'A',            scope:    true,            link:     function (scope, element/*, attrs*/) {                scope.$type = 'TreeDnDNodeHandle';                if (scope.$class.handle) {                    element.addClass(scope.$class.handle);                }            }        };    });
 
 angular.module('ntt.TreeDnD')
     .directive('treeDndNode', [
@@ -212,9 +1016,6 @@ angular.module('ntt.TreeDnD')
                 var unwatchNode = scope.$watch(objexpr, fnWatchNode, true);
 
                 scope.$on('$destroy', function () {
-                    if (unwatchNode) {
-                        unwatchNode();
-                    }
                     // Deregister the watch first
                     if (unwatchNode) {
                         unwatchNode();
@@ -223,7 +1024,6 @@ angular.module('ntt.TreeDnD')
 
                     // Remove from scope cache
                     scope.deleteScope(scope, scope[keyNode]);
-                    $TreeDnDViewport.remove(scope, element);
 
                     // Remove from viewport
                     $TreeDnDViewport.remove(scope, element);
@@ -587,6 +1387,9 @@ function fnInitTreeDnD($timeout, $http, $compile, $parse, $window, $document, $t
         };
 
         $scope.deleteScope = function (scope, node) {
+            if (!$scope.$globals || !node) {
+                return;
+            }
             var _hash = node.__hashKey__;
             if ($scope.$globals[_hash] && $scope.$globals[_hash] === scope) {
                 delete $scope.$globals[_hash];
@@ -1147,6 +1950,15 @@ function fnInitTreeDnD($timeout, $http, $compile, $parse, $window, $document, $t
                 $scope.statusElm.remove();
                 $scope.statusElm = null;
             }
+            if ($scope.tree_nodes && $scope.tree_nodes.length) {
+                var i, node;
+                for (i = 0; i < $scope.tree_nodes.length; i++) {
+                    node = $scope.tree_nodes[i];
+                    if (node) {
+                        clear_node_cache(node);
+                    }
+                }
+            }
 
             // Clear tree node references
             if ($scope.tree_nodes) {
@@ -1169,35 +1981,6 @@ function fnInitTreeDnD($timeout, $http, $compile, $parse, $window, $document, $t
             if (tree) {
                 tree = null;
             }
-        });
-
-        $scope.$on('$destroy', function () {
-            if (timeReloadData) {
-                $timeout.cancel(timeReloadData);
-                timeReloadData = null;
-            }
-            tmpTreeData = null;
-            if ($scope.$globals) {
-                $scope.$globals = {};
-            }
-            if ($scope.placeElm) {
-                $scope.placeElm.remove();
-                $scope.placeElm = null;
-            }
-            if ($scope.statusElm) {
-                $scope.statusElm.remove();
-                $scope.statusElm = null;
-            }
-            if ($scope.tree_nodes && $scope.tree_nodes.length) {
-                var i, node;
-                for (i = 0; i < $scope.tree_nodes.length; i++) {
-                    node = $scope.tree_nodes[i];
-                    if (node) {
-                        clear_node_cache(node);
-                    }
-                }
-            }
-            $scope.tree_nodes = [];
         });
 
         function timeLoadData() {
@@ -1687,774 +2470,6 @@ function fnInitTreeDnD($timeout, $http, $compile, $parse, $window, $document, $t
     }
 }
 
-
-angular.module('ntt.TreeDnD')
-    .factory('$TreeDnDConvert', function () {
-        var _$initConvert = {
-            line2tree: function (data, primaryKey, parentKey, callback) {
-                callback = typeof callback === 'function' ? callback : function () {
-                };
-                if (!data || data.length === 0 || !primaryKey || !parentKey) {
-                    return [];
-                }
-                var tree     = [],
-                    rootIds  = [],
-                    item     = data[0],
-                    _primary = item[primaryKey],
-                    treeObjs = {},
-                    parentId, parent,
-                    len      = data.length,
-                    i        = 0;
-
-                while (i < len) {
-                    item = data[i++];
-                    callback(item);
-                    _primary           = item[primaryKey];
-                    treeObjs[_primary] = item;
-                }
-                i = 0;
-                while (i < len) {
-                    item = data[i++];
-                    callback(item);
-                    _primary           = item[primaryKey];
-                    treeObjs[_primary] = item;
-                    parentId           = item[parentKey];
-                    if (parentId) {
-                        parent = treeObjs[parentId];
-                        if (parent) {
-                            if (parent.__children__) {
-                                parent.__children__.push(item);
-                            } else {
-                                parent.__children__ = [item];
-                            }
-                        }
-                    } else {
-                        rootIds.push(_primary);
-                    }
-                }
-                len = rootIds.length;
-                for (i = 0; i < len; i++) {
-                    tree.push(treeObjs[rootIds[i]]);
-                }
-                return tree;
-            },
-            tree2tree: function access_child(data, containKey, callback) {
-                callback  = typeof callback === 'function' ? callback : function () {
-                };
-                var _tree = [],
-                    _i,
-                    _len  = data ? data.length : 0,
-                    _copy, _child;
-                for (_i = 0; _i < _len; _i++) {
-                    _copy = angular.copy(data[_i]);
-                    callback(_copy);
-                    if (angular.isArray(_copy[containKey]) && _copy[containKey].length > 0) {
-                        _child = access_child(_copy[containKey], containKey, callback);
-                        delete _copy[containKey];
-                        _copy.__children__ = _child;
-                    }
-                    _tree.push(_copy);
-                }
-                return _tree;
-            }
-        };
-
-        return _$initConvert;
-    });
-
-angular.module('ntt.TreeDnD')
-    .factory('$TreeDnDHelper', [
-        '$document', '$window',
-        function ($document, $window) {
-            var _$helper = {
-                nodrag:          function (targetElm) {
-                    return typeof targetElm.attr('data-nodrag') !== 'undefined';
-                },
-                eventObj:        function (e) {
-                    var obj = e;
-                    if (e.targetTouches !== undefined) {
-                        obj = e.targetTouches.item(0);
-                    } else if (e.originalEvent !== undefined && e.originalEvent.targetTouches !== undefined) {
-                        obj = e.originalEvent.targetTouches.item(0);
-                    }
-                    return obj;
-                },
-                dragInfo:        function (scope) {
-                    var _node   = scope.getData(),
-                        _tree   = scope.getScopeTree(),
-                        _parent = scope.getNode(_node.__parent_real__);
-
-                    return {
-                        node:    _node,
-                        parent:  _parent,
-                        move:    {
-                            parent: _parent,
-                            pos:    _node.__index__
-                        },
-                        scope:   scope,
-                        target:  _tree,
-                        drag:    _tree,
-                        drop:    scope.getPrevSibling(_node),
-                        changed: false
-                    };
-                },
-                height:          function (element) {
-                    return element.prop('scrollHeight');
-                },
-                width:           function (element) {
-                    return element.prop('scrollWidth');
-                },
-                offset:          function (element) {
-                    var boundingClientRect = element[0].getBoundingClientRect();
-                    return {
-                        width:  element.prop('offsetWidth'),
-                        height: element.prop('offsetHeight'),
-                        top:    boundingClientRect.top + ($window.pageYOffset || $document[0].body.scrollTop || $document[0].documentElement.scrollTop),
-                        left:   boundingClientRect.left + ($window.pageXOffset || $document[0].body.scrollLeft || $document[0].documentElement.scrollLeft)
-                    };
-                },
-                positionStarted: function (e, target) {
-                    return {
-                        offsetX:  e.pageX - this.offset(target).left,
-                        offsetY:  e.pageY - this.offset(target).top,
-                        startX:   e.pageX,
-                        lastX:    e.pageX,
-                        startY:   e.pageY,
-                        lastY:    e.pageY,
-                        nowX:     0,
-                        nowY:     0,
-                        distX:    0,
-                        distY:    0,
-                        dirAx:    0,
-                        dirX:     0,
-                        dirY:     0,
-                        lastDirX: 0,
-                        lastDirY: 0,
-                        distAxX:  0,
-                        distAxY:  0
-                    };
-                },
-                positionMoved:   function (e, pos, firstMoving) {
-                    // mouse position last events
-                    pos.lastX = pos.nowX;
-                    pos.lastY = pos.nowY;
-
-                    // mouse position this events
-                    pos.nowX = e.pageX;
-                    pos.nowY = e.pageY;
-
-                    // distance mouse moved between events
-                    pos.distX = pos.nowX - pos.lastX;
-                    pos.distY = pos.nowY - pos.lastY;
-
-                    // direction mouse was moving
-                    pos.lastDirX = pos.dirX;
-                    pos.lastDirY = pos.dirY;
-
-                    // direction mouse is now moving (on both axis)
-                    pos.dirX = pos.distX === 0 ? 0 : pos.distX > 0 ? 1 : -1;
-                    pos.dirY = pos.distY === 0 ? 0 : pos.distY > 0 ? 1 : -1;
-
-                    // axis mouse is now moving on
-                    var newAx = Math.abs(pos.distX) > Math.abs(pos.distY) ? 1 : 0;
-
-                    // do nothing on first move
-                    if (firstMoving) {
-                        pos.dirAx  = newAx;
-                        pos.moving = true;
-                        return;
-                    }
-
-                    // calc distance moved on this axis (and direction)
-                    if (pos.dirAx !== newAx) {
-                        pos.distAxX = 0;
-                        pos.distAxY = 0;
-                    } else {
-                        pos.distAxX += Math.abs(pos.distX);
-                        if (pos.dirX !== 0 && pos.dirX !== pos.lastDirX) {
-                            pos.distAxX = 0;
-                        }
-                        pos.distAxY += Math.abs(pos.distY);
-                        if (pos.dirY !== 0 && pos.dirY !== pos.lastDirY) {
-                            pos.distAxY = 0;
-                        }
-                    }
-                    pos.dirAx = newAx;
-                },
-                replaceIndent:   function (scope, element, indent, attr) {
-                    attr = attr || 'left';
-                    angular.element(element.children()[0]).css(attr, scope.$callbacks.calsIndent(indent));
-                }
-            };
-
-            return _$helper;
-        }]
-    );
-
-angular.module('ntt.TreeDnD')
-    .factory('$TreeDnDPlugin', [
-        '$injector',
-        function ($injector) {
-            var _fnget = function (name) {
-                if (angular.isDefined($injector) && $injector.has(name)) {
-                    return $injector.get(name);
-                }
-                return null;
-            };
-            return _fnget;
-        }]
-    );
-
-angular.module('ntt.TreeDnD')
-    .factory('$TreeDnDTemplate', [
-        '$templateCache',
-        function ($templateCache) {
-            var templatePath = 'template/TreeDnD/TreeDnD.html',
-                copyPath     = 'template/TreeDnD/TreeDnDStatusCopy.html',
-                movePath     = 'template/TreeDnD/TreeDnDStatusMove.html',
-                scopes       = {},
-                temp,
-                _$init       = {
-                    setMove: function (path, scope) {
-                        if (!scopes[scope.$id]) {
-                            scopes[scope.$id] = {};
-                        }
-                        scopes[scope.$id].movePath = path;
-                    },
-                    setCopy: function (path, scope) {
-                        if (!scopes[scope.$id]) {
-                            scopes[scope.$id] = {};
-                        }
-                        scopes[scope.$id].copyPath = path;
-                    },
-                    getPath: function () {
-                        return templatePath;
-                    },
-                    getCopy: function (scope) {
-                        if (scopes[scope.$id] && scopes[scope.$id].copyPath) {
-                            temp = $templateCache.get(scopes[scope.$id].copyPath);
-                            if (temp) {
-                                return temp;
-                            }
-                        }
-                        return $templateCache.get(copyPath);
-                    },
-                    getMove: function (scope) {
-                        if (scopes[scope.$id] && scopes[scope.$id].movePath) {
-                            temp = $templateCache.get(scopes[scope.$id].movePath);
-                            if (temp) {
-                                return temp;
-                            }
-                        }
-                        return $templateCache.get(movePath);
-                    }
-                };
-
-            return _$init;
-        }]
-    );
-
-angular.module('ntt.TreeDnD')
-    .factory('$TreeDnDViewport', fnInitTreeDnDViewport);
-
-fnInitTreeDnDViewport.$inject = ['$window', '$document', '$timeout', '$q', '$compile'];
-
-function fnInitTreeDnDViewport($window, $document, $timeout, $q, $compile) {
-
-    var viewport      = null,
-        isUpdating    = false,
-        isRender      = false,
-        updateAgain   = false,
-        viewportRect,
-        items         = [],
-        nodeTemplate,
-        updateTimeout,
-        renderTime,
-        $initViewport = {
-            setViewport:   setViewport,
-            getViewport:   getViewport,
-            add:           add,
-            remove:        remove,
-            setTemplate:   setTemplate,
-            getItems:      getItems,
-            updateDelayed: updateDelayed
-        },
-        eWindow       = angular.element($window);
-
-    eWindow.on('load resize scroll', updateDelayed);
-
-    return $initViewport;
-
-    function update() {
-
-        viewportRect = {
-            width:  eWindow.prop('offsetWidth') || document.documentElement.clientWidth,
-            height: eWindow.prop('offsetHeight') || document.documentElement.clientHeight,
-            top:    $document[0].body.scrollTop || $document[0].documentElement.scrollTop,
-            left:   $document[0].body.scrollLeft || $document[0].documentElement.scrollLeft
-        };
-
-        if (isUpdating || isRender) {
-            updateAgain = true;
-            return;
-        }
-        isUpdating = true;
-
-        recursivePromise();
-    }
-
-    function recursivePromise() {
-        if (isRender) {
-            return;
-        }
-
-        var number = number > 0 ? number : items.length, item;
-
-        if (number > 0) {
-            item = items[0];
-
-            isRender   = true;
-            renderTime = $timeout(function () {
-                //item.element.html(nodeTemplate);
-                //$compile(item.element.contents())(item.scope);
-
-                items.splice(0, 1);
-                isRender = false;
-                number--;
-                $timeout.cancel(renderTime);
-                recursivePromise();
-            }, 0);
-
-        } else {
-            isUpdating = false;
-            if (updateAgain) {
-                updateAgain = false;
-                update();
-            }
-        }
-
-    }
-
-    /**
-     * Check if a point is inside specified bounds
-     * @param x
-     * @param y
-     * @param bounds
-     * @returns {boolean}
-     */
-    function pointIsInsideBounds(x, y, bounds) {
-        return x >= bounds.left &&
-            y >= bounds.top &&
-            x <= bounds.left + bounds.width &&
-            y <= bounds.top + bounds.height;
-    }
-
-    /**
-     * @name setViewport
-     * @desciption Set the viewport element
-     * @param element
-     */
-    function setViewport(element) {
-        viewport = element;
-    }
-
-    /**
-     * Return the current viewport
-     * @returns {*}
-     */
-    function getViewport() {
-        return viewport;
-    }
-
-    /**
-     * trigger an update
-     */
-    function updateDelayed() {
-        $timeout.cancel(updateTimeout);
-        updateTimeout = $timeout(function () {
-            update();
-        }, 0);
-    }
-
-    /**
-     * Add listener for event
-     * @param element
-     * @param callback
-     */
-    function add(scope, element) {
-        updateDelayed();
-        items.push({
-            element: element,
-            scope:   scope
-        });
-    }
-
-    function remove(scope, element) {
-        var i = items.length;
-        while (i--) {
-            if (items[i].scope === scope || (element && items[i].element === element)) {
-                items.splice(i, 1);
-            }
-        }
-    }
-
-    function setTemplate(scope, template) {
-        nodeTemplate = template;
-    }
-
-    /**
-     * Get list of items
-     * @returns {Array}
-     */
-    function getItems() {
-        return items;
-    }
-}
-
-
-angular.module('ntt.TreeDnD')
-    .factory('$TreeDnDFilter', [
-        '$filter', function ($filter) {
-            return fnInitFilter;
-
-            function for_all_descendants(options, node, fieldChild, fnBefore, fnAfter, parentPassed) {
-                if (!angular.isFunction(fnBefore)) {
-                    return null;
-                }
-
-                var _i, _len, _nodes,
-                    _nodePassed   = fnBefore(options, node),
-                    _childPassed  = false,
-                    _filter_index = options.filter_index;
-
-                if (angular.isDefined(node[fieldChild])) {
-                    _nodes = node[fieldChild];
-                    _len   = _nodes.length;
-
-                    options.filter_index = 0;
-                    for (_i = 0; _i < _len; _i++) {
-                        _childPassed = for_all_descendants(
-                            options,
-                            _nodes[_i],
-                            fieldChild,
-                            fnBefore,
-                            fnAfter,
-                            _nodePassed || parentPassed
-                        ) || _childPassed;
-                    }
-
-                    // restore filter_index of node
-                    options.filter_index = _filter_index;
-                }
-
-                if (angular.isFunction(fnAfter)) {
-                    fnAfter(options, node, _nodePassed === true, _childPassed === true, parentPassed === true);
-                }
-
-                return _nodePassed || _childPassed;
-            }
-
-            /**
-             * Check data with callback
-             * @param {string|object|function|regex} callback
-             * @param {*} data
-             * @returns {null|boolean}
-             * @private
-             */
-            function _fnCheck(callback, data) {
-                if (angular.isUndefinedOrNull(data) || angular.isArray(data)) {
-                    return null;
-                }
-
-                if (angular.isFunction(callback)) {
-                    return callback(data, $filter);
-                } else {
-                    if (typeof callback === 'boolean') {
-                        data = !!data;
-                        return data === callback;
-                    } else if (angular.isDefined(callback)) {
-                        try {
-                            var _regex = new RegExp(callback);
-                            return _regex.test(data);
-                        }
-                        catch (err) {
-                            if (typeof data === 'string') {
-                                return data.indexOf(callback) > -1;
-                            } else {
-                                return null;
-                            }
-                        }
-                    } else {
-                        return null;
-                    }
-                }
-            }
-
-            /**
-             * `fnProcess` to call `_fnCheck`. If `condition` is `array` then call `for_each_filter`
-             * else will call `_fnCheck`. Specical `condition.field` is `_$` then apply `condition.callback` for all field, if have `field` invaild then `return true`.
-             *
-             * @param node
-             * @param condition
-             * @param isAnd
-             * @returns {null|boolean}
-             * @private
-             */
-            function _fnProccess(node, condition, isAnd) {
-                if (angular.isArray(condition)) {
-                    return for_each_filter(node, condition, isAnd);
-                } else {
-                    var _key      = condition.field,
-                        _callback = condition.callback,
-                        _iO, _keysO, _lenO;
-
-                    if (_key === '_$') {
-                        _keysO = Object.keys(node);
-                        _lenO  = _keysO.length;
-                        for (_iO = 0; _iO < _lenO; _iO++) {
-                            if (_fnCheck(_callback, node[_keysO[_iO]])) {
-                                return true;
-                            }
-                        }
-                    } else if (angular.isDefined(node[_key])) {
-                        return _fnCheck(_callback, node[_key]);
-                    }
-                }
-                return null;
-            }
-
-            /**
-             *
-             * @param {object} node
-             * @param {array} conditions Array `conditions`
-             * @param {boolean} isAnd check with condition `And`, if `And` then `return false` when all `false`
-             * @returns {null|boolean}
-             */
-            function for_each_filter(node, conditions, isAnd) {
-                var i, len = conditions.length || 0, passed = false;
-                if (len === 0) {
-                    return null;
-                }
-
-                for (i = 0; i < len; i++) {
-                    if (_fnProccess(node, conditions[i], !isAnd)) {
-                        passed = true;
-                        // if condition `or` then return;
-                        if (!isAnd) {
-                            return true;
-                        }
-                    } else {
-
-                        // if condition `and` and result in fnProccess = false then return;
-                        if (isAnd) {
-                            return false;
-                        }
-                    }
-                }
-
-                return passed;
-            }
-
-            /**
-             * Will call _fnAfter to clear data no need
-             * @param {object} options
-             * @param {object} node
-             * @param {boolean} isNodePassed
-             * @param {boolean} isChildPassed
-             * @param {boolean} isParentPassed
-             * @private
-             */
-            function _fnAfter(options, node, isNodePassed, isChildPassed, isParentPassed) {
-                if (isNodePassed === true) {
-                    node.__filtered__         = true;
-                    node.__filtered_visible__ = true;
-                    node.__filtered_index__   = options.filter_index++;
-                    return; //jmp
-                } else if (isChildPassed === true && options.showParent === true
-                    || isParentPassed === true && options.showChild === true) {
-                    node.__filtered__         = false;
-                    node.__filtered_visible__ = true;
-                    node.__filtered_index__   = options.filter_index++;
-                    return; //jmp
-                }
-
-                // remove attr __filtered__
-                delete node.__filtered__;
-                delete node.__filtered_visible__;
-                delete node.__filtered_index__;
-            }
-
-            /**
-             * `fnBefore` will called when `for_all_descendants` of `node` checking.
-             * If `filter` empty then return `true` else result of function `_fnProccess` {@see _fnProccess}
-             *
-             * @param {object} options
-             * @param {object} node
-             * @returns {null|boolean}
-             * @private
-             */
-            function _fnBefore(options, node) {
-                if (options.filter.length === 0) {
-                    return true;
-                } else {
-                    return _fnProccess(node, options.filter, options.beginAnd || false);
-                }
-            }
-
-            /**
-             * `fnBeforeClear` will called when `for_all_descendants` of `node` checking.
-             * Alway false to Clear Filter empty
-             *
-             * @param {object} options
-             * @param {object} node
-             * @returns {null|boolean}
-             * @private
-             */
-            function _fnBeforeClear(options, node) {
-                return false;
-            }
-
-            /**
-             * `_fnConvert` to convert `filter` `object` to `array` invaild.
-             *
-             * @param {object|array} filters
-             * @returns {array} Instead of `filter` or new array invaild *(converted from filter)*
-             * @private
-             */
-            function _fnConvert(filters) {
-                var _iF, _lenF, _keysF,
-                    _filter,
-                    _state;
-                // convert filter object to array filter
-                if (angular.isObject(filters) && !angular.isArray(filters)) {
-                    _keysF  = Object.keys(filters);
-                    _lenF   = _keysF.length;
-                    _filter = [];
-
-                    if (_lenF > 0) {
-                        for (_iF = 0; _iF < _lenF; _iF++) {
-
-                            if (typeof filters[_keysF[_iF]] === 'string' && filters[_keysF[_iF]].length === 0) {
-                                continue;
-                            } else if (angular.isArray(filters[_keysF[_iF]])) {
-                                _state = filters[_keysF[_iF]];
-                            } else if (angular.isObject(filters[_keysF[_iF]])) {
-                                _state = _fnConvert(filters[_keysF[_iF]]);
-                            } else {
-                                _state = {
-                                    field:    _keysF[_iF],
-                                    callback: filters[_keysF[_iF]]
-                                };
-                            }
-                            _filter.push(_state);
-                        }
-                    }
-                    _state = null;
-                    return _filter;
-                }
-                else {
-                    return filters;
-                }
-            }
-
-            /**
-             * `fnInitFilter` function is constructor of service `$TreeDnDFilter`.
-             * @constructor
-             * @param {object|array} treeData
-             * @param {object|array} filters
-             * @param {object} options
-             * @param {string} keyChild
-             * @returns {array} Return `treeData` or `treeData` with `filter`
-             * @private
-             */
-            function fnInitFilter(treeData, filters, options, keyChild) {
-                if (!angular.isArray(treeData)
-                    || treeData.length === 0) {
-                    return treeData;
-                }
-
-                var _i, _len,
-                    _filter;
-
-                _filter = _fnConvert(filters);
-                if (!(angular.isArray(_filter) || angular.isObject(_filter))
-                    || _filter.length === 0) {
-                    for (_i = 0, _len = treeData.length; _i < _len; _i++) {
-                        for_all_descendants(
-                            options,
-                            treeData[_i],
-                            keyChild || '__children__',
-                            _fnBeforeClear, _fnAfter
-                        );
-                    }
-                    return treeData;
-                }
-
-                options.filter       = _filter;
-                options.filter_index = 0;
-                for (_i = 0, _len = treeData.length; _i < _len; _i++) {
-                    for_all_descendants(
-                        options,
-                        treeData[_i],
-                        keyChild || '__children__',
-                        _fnBefore, _fnAfter
-                    );
-                }
-
-                return treeData;
-            }
-
-        }]
-    );
-
-angular.module('ntt.TreeDnD')
-    .factory('$TreeDnDOrderBy', [
-        '$filter',
-        function ($filter) {
-            var _fnOrderBy          = $filter('orderBy'),
-                for_all_descendants = function for_all_descendants(options, node, name, fnOrderBy) {
-                    var _i, _len, _nodes;
-
-                    if (angular.isDefined(node[name])) {
-                        _nodes = node[name];
-                        _len   = _nodes.length;
-                        // OrderBy children
-                        for (_i = 0; _i < _len; _i++) {
-                            _nodes[_i] = for_all_descendants(options, _nodes[_i], name, fnOrderBy);
-                        }
-
-                        node[name] = fnOrderBy(node[name], options);
-                    }
-                    return node;
-                },
-                _fnOrder            = function _fnOrder(list, orderBy) {
-                    return _fnOrderBy(list, orderBy);
-                },
-                _fnMain             = function _fnMain(treeData, orderBy) {
-                    if (!angular.isArray(treeData)
-                        || treeData.length === 0
-                        || !(angular.isArray(orderBy) || angular.isObject(orderBy) || angular.isString(orderBy) || angular.isFunction(orderBy))
-                        || orderBy.length === 0 && !angular.isFunction(orderBy)) {
-                        return treeData;
-                    }
-
-                    var _i, _len;
-
-                    for (_i = 0, _len = treeData.length; _i < _len; _i++) {
-                        treeData[_i] = for_all_descendants(
-                            orderBy,
-                            treeData[_i],
-                            '__children__',
-                            _fnOrder
-                        );
-                    }
-
-                    return _fnOrder(treeData, orderBy);
-                };
-
-            return _fnMain;
-        }]
-    );
 
 angular.module('ntt.TreeDnD')
     .factory('$TreeDnDDrag', [
@@ -3659,822 +3674,6 @@ angular.module('ntt.TreeDnD')
 
         return _$init;
     });
-
-angular.module('ntt.TreeDnD')
-    .factory('$TreeDnDFilter', [
-        '$filter', function ($filter) {
-            return fnInitFilter;
-
-            function for_all_descendants(options, node, fieldChild, fnBefore, fnAfter, parentPassed) {
-                if (!angular.isFunction(fnBefore)) {
-                    return null;
-                }
-
-                var _i, _len, _nodes,
-                    _nodePassed   = fnBefore(options, node),
-                    _childPassed  = false,
-                    _filter_index = options.filter_index;
-
-                if (angular.isDefined(node[fieldChild])) {
-                    _nodes = node[fieldChild];
-                    _len   = _nodes.length;
-
-                    options.filter_index = 0;
-                    for (_i = 0; _i < _len; _i++) {
-                        _childPassed = for_all_descendants(
-                            options,
-                            _nodes[_i],
-                            fieldChild,
-                            fnBefore,
-                            fnAfter,
-                            _nodePassed || parentPassed
-                        ) || _childPassed;
-                    }
-
-                    // restore filter_index of node
-                    options.filter_index = _filter_index;
-                }
-
-                if (angular.isFunction(fnAfter)) {
-                    fnAfter(options, node, _nodePassed === true, _childPassed === true, parentPassed === true);
-                }
-
-                return _nodePassed || _childPassed;
-            }
-
-            /**
-             * Check data with callback
-             * @param {string|object|function|regex} callback
-             * @param {*} data
-             * @returns {null|boolean}
-             * @private
-             */
-            function _fnCheck(callback, data) {
-                if (angular.isUndefinedOrNull(data) || angular.isArray(data)) {
-                    return null;
-                }
-
-                if (angular.isFunction(callback)) {
-                    return callback(data, $filter);
-                } else {
-                    if (typeof callback === 'boolean') {
-                        data = !!data;
-                        return data === callback;
-                    } else if (angular.isDefined(callback)) {
-                        try {
-                            var _regex = new RegExp(callback);
-                            return _regex.test(data);
-                        }
-                        catch (err) {
-                            if (typeof data === 'string') {
-                                return data.indexOf(callback) > -1;
-                            } else {
-                                return null;
-                            }
-                        }
-                    } else {
-                        return null;
-                    }
-                }
-            }
-
-            /**
-             * `fnProcess` to call `_fnCheck`. If `condition` is `array` then call `for_each_filter`
-             * else will call `_fnCheck`. Specical `condition.field` is `_$` then apply `condition.callback` for all field, if have `field` invaild then `return true`.
-             *
-             * @param node
-             * @param condition
-             * @param isAnd
-             * @returns {null|boolean}
-             * @private
-             */
-            function _fnProccess(node, condition, isAnd) {
-                if (angular.isArray(condition)) {
-                    return for_each_filter(node, condition, isAnd);
-                } else {
-                    var _key      = condition.field,
-                        _callback = condition.callback,
-                        _iO, _keysO, _lenO;
-
-                    if (_key === '_$') {
-                        _keysO = Object.keys(node);
-                        _lenO  = _keysO.length;
-                        for (_iO = 0; _iO < _lenO; _iO++) {
-                            if (_fnCheck(_callback, node[_keysO[_iO]])) {
-                                return true;
-                            }
-                        }
-                    } else if (angular.isDefined(node[_key])) {
-                        return _fnCheck(_callback, node[_key]);
-                    }
-                }
-                return null;
-            }
-
-            /**
-             *
-             * @param {object} node
-             * @param {array} conditions Array `conditions`
-             * @param {boolean} isAnd check with condition `And`, if `And` then `return false` when all `false`
-             * @returns {null|boolean}
-             */
-            function for_each_filter(node, conditions, isAnd) {
-                var i, len = conditions.length || 0, passed = false;
-                if (len === 0) {
-                    return null;
-                }
-
-                for (i = 0; i < len; i++) {
-                    if (_fnProccess(node, conditions[i], !isAnd)) {
-                        passed = true;
-                        // if condition `or` then return;
-                        if (!isAnd) {
-                            return true;
-                        }
-                    } else {
-
-                        // if condition `and` and result in fnProccess = false then return;
-                        if (isAnd) {
-                            return false;
-                        }
-                    }
-                }
-
-                return passed;
-            }
-
-            /**
-             * Will call _fnAfter to clear data no need
-             * @param {object} options
-             * @param {object} node
-             * @param {boolean} isNodePassed
-             * @param {boolean} isChildPassed
-             * @param {boolean} isParentPassed
-             * @private
-             */
-            function _fnAfter(options, node, isNodePassed, isChildPassed, isParentPassed) {
-                if (isNodePassed === true) {
-                    node.__filtered__         = true;
-                    node.__filtered_visible__ = true;
-                    node.__filtered_index__   = options.filter_index++;
-                    return; //jmp
-                } else if (isChildPassed === true && options.showParent === true
-                    || isParentPassed === true && options.showChild === true) {
-                    node.__filtered__         = false;
-                    node.__filtered_visible__ = true;
-                    node.__filtered_index__   = options.filter_index++;
-                    return; //jmp
-                }
-
-                // remove attr __filtered__
-                delete node.__filtered__;
-                delete node.__filtered_visible__;
-                delete node.__filtered_index__;
-            }
-
-            /**
-             * `fnBefore` will called when `for_all_descendants` of `node` checking.
-             * If `filter` empty then return `true` else result of function `_fnProccess` {@see _fnProccess}
-             *
-             * @param {object} options
-             * @param {object} node
-             * @returns {null|boolean}
-             * @private
-             */
-            function _fnBefore(options, node) {
-                if (options.filter.length === 0) {
-                    return true;
-                } else {
-                    return _fnProccess(node, options.filter, options.beginAnd || false);
-                }
-            }
-
-            /**
-             * `fnBeforeClear` will called when `for_all_descendants` of `node` checking.
-             * Alway false to Clear Filter empty
-             *
-             * @param {object} options
-             * @param {object} node
-             * @returns {null|boolean}
-             * @private
-             */
-            function _fnBeforeClear(options, node) {
-                return false;
-            }
-
-            /**
-             * `_fnConvert` to convert `filter` `object` to `array` invaild.
-             *
-             * @param {object|array} filters
-             * @returns {array} Instead of `filter` or new array invaild *(converted from filter)*
-             * @private
-             */
-            function _fnConvert(filters) {
-                var _iF, _lenF, _keysF,
-                    _filter,
-                    _state;
-                // convert filter object to array filter
-                if (angular.isObject(filters) && !angular.isArray(filters)) {
-                    _keysF  = Object.keys(filters);
-                    _lenF   = _keysF.length;
-                    _filter = [];
-
-                    if (_lenF > 0) {
-                        for (_iF = 0; _iF < _lenF; _iF++) {
-
-                            if (typeof filters[_keysF[_iF]] === 'string' && filters[_keysF[_iF]].length === 0) {
-                                continue;
-                            } else if (angular.isArray(filters[_keysF[_iF]])) {
-                                _state = filters[_keysF[_iF]];
-                            } else if (angular.isObject(filters[_keysF[_iF]])) {
-                                _state = _fnConvert(filters[_keysF[_iF]]);
-                            } else {
-                                _state = {
-                                    field:    _keysF[_iF],
-                                    callback: filters[_keysF[_iF]]
-                                };
-                            }
-                            _filter.push(_state);
-                        }
-                    }
-                    _state = null;
-                    return _filter;
-                }
-                else {
-                    return filters;
-                }
-            }
-
-            /**
-             * `fnInitFilter` function is constructor of service `$TreeDnDFilter`.
-             * @constructor
-             * @param {object|array} treeData
-             * @param {object|array} filters
-             * @param {object} options
-             * @param {string} keyChild
-             * @returns {array} Return `treeData` or `treeData` with `filter`
-             * @private
-             */
-            function fnInitFilter(treeData, filters, options, keyChild) {
-                if (!angular.isArray(treeData)
-                    || treeData.length === 0) {
-                    return treeData;
-                }
-
-                var _i, _len,
-                    _filter;
-
-                _filter = _fnConvert(filters);
-                if (!(angular.isArray(_filter) || angular.isObject(_filter))
-                    || _filter.length === 0) {
-                    for (_i = 0, _len = treeData.length; _i < _len; _i++) {
-                        for_all_descendants(
-                            options,
-                            treeData[_i],
-                            keyChild || '__children__',
-                            _fnBeforeClear, _fnAfter
-                        );
-                    }
-                    return treeData;
-                }
-
-                options.filter       = _filter;
-                options.filter_index = 0;
-                for (_i = 0, _len = treeData.length; _i < _len; _i++) {
-                    for_all_descendants(
-                        options,
-                        treeData[_i],
-                        keyChild || '__children__',
-                        _fnBefore, _fnAfter
-                    );
-                }
-
-                return treeData;
-            }
-
-        }]
-    );
-
-angular.module('ntt.TreeDnD')
-    .factory('$TreeDnDOrderBy', [
-        '$filter',
-        function ($filter) {
-            var _fnOrderBy          = $filter('orderBy'),
-                for_all_descendants = function for_all_descendants(options, node, name, fnOrderBy) {
-                    var _i, _len, _nodes;
-
-                    if (angular.isDefined(node[name])) {
-                        _nodes = node[name];
-                        _len   = _nodes.length;
-                        // OrderBy children
-                        for (_i = 0; _i < _len; _i++) {
-                            _nodes[_i] = for_all_descendants(options, _nodes[_i], name, fnOrderBy);
-                        }
-
-                        node[name] = fnOrderBy(node[name], options);
-                    }
-                    return node;
-                },
-                _fnOrder            = function _fnOrder(list, orderBy) {
-                    return _fnOrderBy(list, orderBy);
-                },
-                _fnMain             = function _fnMain(treeData, orderBy) {
-                    if (!angular.isArray(treeData)
-                        || treeData.length === 0
-                        || !(angular.isArray(orderBy) || angular.isObject(orderBy) || angular.isString(orderBy) || angular.isFunction(orderBy))
-                        || orderBy.length === 0 && !angular.isFunction(orderBy)) {
-                        return treeData;
-                    }
-
-                    var _i, _len;
-
-                    for (_i = 0, _len = treeData.length; _i < _len; _i++) {
-                        treeData[_i] = for_all_descendants(
-                            orderBy,
-                            treeData[_i],
-                            '__children__',
-                            _fnOrder
-                        );
-                    }
-
-                    return _fnOrder(treeData, orderBy);
-                };
-
-            return _fnMain;
-        }]
-    );
-
-angular.module('ntt.TreeDnD')
-    .factory('$TreeDnDConvert', function () {
-        var _$initConvert = {
-            line2tree: function (data, primaryKey, parentKey, callback) {
-                callback = typeof callback === 'function' ? callback : function () {
-                };
-                if (!data || data.length === 0 || !primaryKey || !parentKey) {
-                    return [];
-                }
-                var tree     = [],
-                    rootIds  = [],
-                    item     = data[0],
-                    _primary = item[primaryKey],
-                    treeObjs = {},
-                    parentId, parent,
-                    len      = data.length,
-                    i        = 0;
-
-                while (i < len) {
-                    item = data[i++];
-                    callback(item);
-                    _primary           = item[primaryKey];
-                    treeObjs[_primary] = item;
-                }
-                i = 0;
-                while (i < len) {
-                    item = data[i++];
-                    callback(item);
-                    _primary           = item[primaryKey];
-                    treeObjs[_primary] = item;
-                    parentId           = item[parentKey];
-                    if (parentId) {
-                        parent = treeObjs[parentId];
-                        if (parent) {
-                            if (parent.__children__) {
-                                parent.__children__.push(item);
-                            } else {
-                                parent.__children__ = [item];
-                            }
-                        }
-                    } else {
-                        rootIds.push(_primary);
-                    }
-                }
-                len = rootIds.length;
-                for (i = 0; i < len; i++) {
-                    tree.push(treeObjs[rootIds[i]]);
-                }
-                return tree;
-            },
-            tree2tree: function access_child(data, containKey, callback) {
-                callback  = typeof callback === 'function' ? callback : function () {
-                };
-                var _tree = [],
-                    _i,
-                    _len  = data ? data.length : 0,
-                    _copy, _child;
-                for (_i = 0; _i < _len; _i++) {
-                    _copy = angular.copy(data[_i]);
-                    callback(_copy);
-                    if (angular.isArray(_copy[containKey]) && _copy[containKey].length > 0) {
-                        _child = access_child(_copy[containKey], containKey, callback);
-                        delete _copy[containKey];
-                        _copy.__children__ = _child;
-                    }
-                    _tree.push(_copy);
-                }
-                return _tree;
-            }
-        };
-
-        return _$initConvert;
-    });
-
-angular.module('ntt.TreeDnD')
-    .factory('$TreeDnDHelper', [
-        '$document', '$window',
-        function ($document, $window) {
-            var _$helper = {
-                nodrag:          function (targetElm) {
-                    return typeof targetElm.attr('data-nodrag') !== 'undefined';
-                },
-                eventObj:        function (e) {
-                    var obj = e;
-                    if (e.targetTouches !== undefined) {
-                        obj = e.targetTouches.item(0);
-                    } else if (e.originalEvent !== undefined && e.originalEvent.targetTouches !== undefined) {
-                        obj = e.originalEvent.targetTouches.item(0);
-                    }
-                    return obj;
-                },
-                dragInfo:        function (scope) {
-                    var _node   = scope.getData(),
-                        _tree   = scope.getScopeTree(),
-                        _parent = scope.getNode(_node.__parent_real__);
-
-                    return {
-                        node:    _node,
-                        parent:  _parent,
-                        move:    {
-                            parent: _parent,
-                            pos:    _node.__index__
-                        },
-                        scope:   scope,
-                        target:  _tree,
-                        drag:    _tree,
-                        drop:    scope.getPrevSibling(_node),
-                        changed: false
-                    };
-                },
-                height:          function (element) {
-                    return element.prop('scrollHeight');
-                },
-                width:           function (element) {
-                    return element.prop('scrollWidth');
-                },
-                offset:          function (element) {
-                    var boundingClientRect = element[0].getBoundingClientRect();
-                    return {
-                        width:  element.prop('offsetWidth'),
-                        height: element.prop('offsetHeight'),
-                        top:    boundingClientRect.top + ($window.pageYOffset || $document[0].body.scrollTop || $document[0].documentElement.scrollTop),
-                        left:   boundingClientRect.left + ($window.pageXOffset || $document[0].body.scrollLeft || $document[0].documentElement.scrollLeft)
-                    };
-                },
-                positionStarted: function (e, target) {
-                    return {
-                        offsetX:  e.pageX - this.offset(target).left,
-                        offsetY:  e.pageY - this.offset(target).top,
-                        startX:   e.pageX,
-                        lastX:    e.pageX,
-                        startY:   e.pageY,
-                        lastY:    e.pageY,
-                        nowX:     0,
-                        nowY:     0,
-                        distX:    0,
-                        distY:    0,
-                        dirAx:    0,
-                        dirX:     0,
-                        dirY:     0,
-                        lastDirX: 0,
-                        lastDirY: 0,
-                        distAxX:  0,
-                        distAxY:  0
-                    };
-                },
-                positionMoved:   function (e, pos, firstMoving) {
-                    // mouse position last events
-                    pos.lastX = pos.nowX;
-                    pos.lastY = pos.nowY;
-
-                    // mouse position this events
-                    pos.nowX = e.pageX;
-                    pos.nowY = e.pageY;
-
-                    // distance mouse moved between events
-                    pos.distX = pos.nowX - pos.lastX;
-                    pos.distY = pos.nowY - pos.lastY;
-
-                    // direction mouse was moving
-                    pos.lastDirX = pos.dirX;
-                    pos.lastDirY = pos.dirY;
-
-                    // direction mouse is now moving (on both axis)
-                    pos.dirX = pos.distX === 0 ? 0 : pos.distX > 0 ? 1 : -1;
-                    pos.dirY = pos.distY === 0 ? 0 : pos.distY > 0 ? 1 : -1;
-
-                    // axis mouse is now moving on
-                    var newAx = Math.abs(pos.distX) > Math.abs(pos.distY) ? 1 : 0;
-
-                    // do nothing on first move
-                    if (firstMoving) {
-                        pos.dirAx  = newAx;
-                        pos.moving = true;
-                        return;
-                    }
-
-                    // calc distance moved on this axis (and direction)
-                    if (pos.dirAx !== newAx) {
-                        pos.distAxX = 0;
-                        pos.distAxY = 0;
-                    } else {
-                        pos.distAxX += Math.abs(pos.distX);
-                        if (pos.dirX !== 0 && pos.dirX !== pos.lastDirX) {
-                            pos.distAxX = 0;
-                        }
-                        pos.distAxY += Math.abs(pos.distY);
-                        if (pos.dirY !== 0 && pos.dirY !== pos.lastDirY) {
-                            pos.distAxY = 0;
-                        }
-                    }
-                    pos.dirAx = newAx;
-                },
-                replaceIndent:   function (scope, element, indent, attr) {
-                    attr = attr || 'left';
-                    angular.element(element.children()[0]).css(attr, scope.$callbacks.calsIndent(indent));
-                }
-            };
-
-            return _$helper;
-        }]
-    );
-
-angular.module('ntt.TreeDnD')
-    .factory('$TreeDnDPlugin', [
-        '$injector',
-        function ($injector) {
-            var _fnget = function (name) {
-                if (angular.isDefined($injector) && $injector.has(name)) {
-                    return $injector.get(name);
-                }
-                return null;
-            };
-            return _fnget;
-        }]
-    );
-
-angular.module('ntt.TreeDnD')
-    .factory('$TreeDnDTemplate', [
-        '$templateCache',
-        function ($templateCache) {
-            var templatePath = 'template/TreeDnD/TreeDnD.html',
-                copyPath     = 'template/TreeDnD/TreeDnDStatusCopy.html',
-                movePath     = 'template/TreeDnD/TreeDnDStatusMove.html',
-                scopes       = {},
-                temp,
-                _$init       = {
-                    setMove: function (path, scope) {
-                        if (!scopes[scope.$id]) {
-                            scopes[scope.$id] = {};
-                        }
-                        scopes[scope.$id].movePath = path;
-                    },
-                    setCopy: function (path, scope) {
-                        if (!scopes[scope.$id]) {
-                            scopes[scope.$id] = {};
-                        }
-                        scopes[scope.$id].copyPath = path;
-                    },
-                    getPath: function () {
-                        return templatePath;
-                    },
-                    getCopy: function (scope) {
-                        if (scopes[scope.$id] && scopes[scope.$id].copyPath) {
-                            temp = $templateCache.get(scopes[scope.$id].copyPath);
-                            if (temp) {
-                                return temp;
-                            }
-                        }
-                        return $templateCache.get(copyPath);
-                    },
-                    getMove: function (scope) {
-                        if (scopes[scope.$id] && scopes[scope.$id].movePath) {
-                            temp = $templateCache.get(scopes[scope.$id].movePath);
-                            if (temp) {
-                                return temp;
-                            }
-                        }
-                        return $templateCache.get(movePath);
-                    }
-                };
-
-            return _$init;
-        }]
-    );
-
-angular.module('ntt.TreeDnD')
-    .factory('$TreeDnDViewport', fnInitTreeDnDViewport);
-
-fnInitTreeDnDViewport.$inject = ['$window', '$document', '$timeout', '$q', '$compile'];
-
-function fnInitTreeDnDViewport($window, $document, $timeout, $q, $compile) {
-
-    var viewport      = null,
-        isUpdating    = false,
-        isRender      = false,
-        updateAgain   = false,
-        viewportRect,
-        items         = [],
-        nodeTemplate,
-        updateTimeout,
-        renderTime,
-        windowListenersBound = false,
-        $initViewport = {
-            setViewport:   setViewport,
-            getViewport:   getViewport,
-            add:           add,
-            remove:        remove,
-            setTemplate:   setTemplate,
-            getItems:      getItems,
-            updateDelayed: updateDelayed,
-            destroy:       destroy
-        },
-        eWindow       = angular.element($window);
-
-    return $initViewport;
-
-    /**
-     * Bind window event listeners (lazily on first add)
-     */
-    function bindWindowListeners() {
-        if (!windowListenersBound) {
-            eWindow.on('load resize scroll', updateDelayed);
-            windowListenersBound = true;
-        }
-    }
-
-    /**
-     * Unbind window event listeners and clean up resources
-     */
-    function destroy() {
-        if (windowListenersBound) {
-            eWindow.off('load resize scroll', updateDelayed);
-            windowListenersBound = false;
-        }
-
-        // Cancel any pending timeouts
-        if (updateTimeout) {
-            $timeout.cancel(updateTimeout);
-            updateTimeout = null;
-        }
-        if (renderTime) {
-            $timeout.cancel(renderTime);
-            renderTime = null;
-        }
-
-        // Clear all item references
-        items.length = 0;
-        viewport = null;
-        nodeTemplate = null;
-        isUpdating = false;
-        isRender = false;
-        updateAgain = false;
-    }
-
-    function update() {
-
-        viewportRect = {
-            width:  eWindow.prop('offsetWidth') || document.documentElement.clientWidth,
-            height: eWindow.prop('offsetHeight') || document.documentElement.clientHeight,
-            top:    $document[0].body.scrollTop || $document[0].documentElement.scrollTop,
-            left:   $document[0].body.scrollLeft || $document[0].documentElement.scrollLeft
-        };
-
-        if (isUpdating || isRender) {
-            updateAgain = true;
-            return;
-        }
-        isUpdating = true;
-
-        recursivePromise();
-    }
-
-    function recursivePromise() {
-        if (isRender) {
-            return;
-        }
-
-        var number = number > 0 ? number : items.length, item;
-
-        if (number > 0) {
-            item = items[0];
-
-            isRender   = true;
-            renderTime = $timeout(function () {
-                //item.element.html(nodeTemplate);
-                //$compile(item.element.contents())(item.scope);
-
-                items.splice(0, 1);
-                isRender = false;
-                number--;
-                $timeout.cancel(renderTime);
-                recursivePromise();
-            }, 0);
-
-        } else {
-            isUpdating = false;
-            if (updateAgain) {
-                updateAgain = false;
-                update();
-            }
-        }
-
-    }
-
-    /**
-     * Check if a point is inside specified bounds
-     * @param x
-     * @param y
-     * @param bounds
-     * @returns {boolean}
-     */
-    function pointIsInsideBounds(x, y, bounds) {
-        return x >= bounds.left &&
-            y >= bounds.top &&
-            x <= bounds.left + bounds.width &&
-            y <= bounds.top + bounds.height;
-    }
-
-    /**
-     * @name setViewport
-     * @desciption Set the viewport element
-     * @param element
-     */
-    function setViewport(element) {
-        viewport = element;
-    }
-
-    /**
-     * Return the current viewport
-     * @returns {*}
-     */
-    function getViewport() {
-        return viewport;
-    }
-
-    /**
-     * trigger an update
-     */
-    function updateDelayed() {
-        $timeout.cancel(updateTimeout);
-        updateTimeout = $timeout(function () {
-            update();
-        }, 0);
-    }
-
-    /**
-     * Add listener for event
-     * @param element
-     * @param callback
-     */
-    function add(scope, element) {
-        // Lazily bind window listeners on first add
-        bindWindowListeners();
-        updateDelayed();
-        items.push({
-            element: element,
-            scope:   scope
-        });
-    }
-
-    function remove(scope, element) {
-        var i = items.length;
-        while (i--) {
-            if (items[i].scope === scope || (element && items[i].element === element)) {
-                // Clear references before removing
-                items[i].scope = null;
-                items[i].element = null;
-                items.splice(i, 1);
-            }
-        }
-        // Auto-cleanup: unbind window listeners when no items remain
-        if (items.length === 0 && windowListenersBound) {
-            eWindow.off('load resize scroll', updateDelayed);
-            windowListenersBound = false;
-        }
-    }
-
-    function setTemplate(scope, template) {
-        nodeTemplate = template;
-    }
-
-    /**
-     * Get list of items
-     * @returns {Array}
-     */
-    function getItems() {
-        return items;
-    }
-}
-
 
 angular.module('template/TreeDnD/TreeDnD.html', []).run(
     ['$templateCache', function ($templateCache) {
