@@ -84,7 +84,7 @@ angular.module('ntt.TreeDnD')
 
                 objexpr = '[' + objprops.join(',') + ']';
 
-                var unwatchNode = scope.$watch(objexpr, fnWatchNode, true);
+                var unwatchNode = scope.$watchCollection(objexpr, fnWatchNode);
 
                 scope.$on('$destroy', function () {
                     //removeIf(nodebug)

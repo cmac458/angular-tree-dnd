@@ -756,7 +756,7 @@ function fnInitTreeDnD($timeout, $http, $compile, $parse, $window, $document, $t
 
         if ($attrs.treeData) {
             // Store deregistration function for treeData watch
-            var unwatchTreeData = $scope.$watch(
+            var unwatchTreeData = $scope.$watchCollection(
                 $attrs.treeData, function (val) {
                     if (angular.equals(val, $scope.treeData)) {
                         return;
@@ -766,7 +766,7 @@ function fnInitTreeDnD($timeout, $http, $compile, $parse, $window, $document, $t
                     if (angular.isUndefinedOrNull(timeReloadData)) {
                         timeReloadData = $timeout(timeLoadData, 350);
                     }
-                }, true
+                }
             );
             _watchDeregistrations.push(unwatchTreeData);
         }
