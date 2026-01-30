@@ -179,6 +179,10 @@
 * 'enable-hotkey': `true`: press 'shift' to move node, unpress 'shift' to copy node. *(default `false`)*
 * 'enable-drag': to Enable-drag *(default `true`)*
 * 'enable-status': to show status moving, copying *(default `false`)*
+* 'virtual-scroll': enable UI-Scroll virtual rendering for rows. Requires the `ui-scroll` module in your app. *(default `false`)*
+* 'virtual-scroll-height': height for the scroll viewport (ex: `400px` or `60vh`). *(optional)*
+* 'virtual-scroll-buffer': number of extra rows to render beyond the viewport. *(default `20`)*
+* 'virtual-scroll-row-height': fixed row height in pixels for UI-Scroll `item-size`. *(optional)*
 * 'template-copy': to add url template of `Status Copy` *(can bypass string or variable in controller, but just only get $templateCache, if not exist will get default)*;
 * 'template-move': to add url template of `Status Move` *(can bypass string or variable in controller, but just only get $templateCache, if not exist will get default)*;
 * Example:
