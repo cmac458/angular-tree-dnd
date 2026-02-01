@@ -53,6 +53,12 @@
     background-color: #e5e5e5;
 }
 
+.tree-dnd-viewport {
+    display: block;
+    overflow-y: auto;
+    width: 100%;
+}
+
 .indented {
     position: relative;
 }

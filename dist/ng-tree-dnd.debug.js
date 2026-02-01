@@ -35,7 +35,7 @@
 
     angular.isDefined = isDefined;
 
-    angular.module('ntt.TreeDnD', ['template/TreeDnD/TreeDnD.html'])
+angular.module('ntt.TreeDnD', ['template/TreeDnD/TreeDnD.html', 'ui.scroll'])
         .constant('$TreeDnDClass', {
             tree:   'tree-dnd',
             empty:  'tree-dnd-empty',
@@ -1150,6 +1150,21 @@ angular.module('ntt.TreeDnD')
                     scope.$nodes_class = '';
                 }
             }
+        $scope.virtualScrollEnabled = false;
+        $scope.virtualScrollBuffer = 20;
+        $scope.virtualScrollRowHeight = null;
+        $scope.virtualScrollViewportStyle = null;
+        $scope.virtualScrollNodes = [];
+        $scope.virtualScrollAdapter = {};
+        $scope.virtualScrollDatasource = {
+            get: function (index, count, success) {
+                var nodes = $scope.virtualScrollNodes || [];
+                if (index < 0) {
+                    index = 0;
+                }
+                success(nodes.slice(index, index + count));
+            }
+        };
         };
     });
 
@@ -1256,6 +1271,55 @@ function fnInitTreeDnD($timeout, $http, $compile, $parse, $window, $document, $t
                 if (node !== $scope.tree.selected_node) {
                     $scope.tree.select_node(node);
                 }
+
+        function updateVirtualScrollNodes() {
+            if (!$scope.virtualScrollEnabled) {
+                return;
+            }
+            var visible = [],
+                i,
+                node,
+                len = $scope.tree_nodes ? $scope.tree_nodes.length : 0;
+
+            for (i = 0; i < len; i++) {
+                node = $scope.tree_nodes[i];
+                if (node && node.__visible__) {
+                    visible.push(node);
+                }
+            }
+            $scope.virtualScrollNodes = visible;
+            if ($scope.virtualScrollAdapter && angular.isFunction($scope.virtualScrollAdapter.reload)) {
+                $scope.virtualScrollAdapter.reload(0);
+            }
+        }
+
+        function initVirtualScrollSettings() {
+            var enabledExpr = $attrs.virtualScroll || $attrs.enableVirtualScroll,
+                buffer = $attrs.virtualScrollBuffer,
+                rowHeight = $attrs.virtualScrollRowHeight,
+                viewportHeight = $attrs.virtualScrollHeight;
+
+            if (angular.isDefined(enabledExpr)) {
+                $scope.virtualScrollEnabled = $scope.$eval(enabledExpr) !== false;
+            }
+
+            if (angular.isDefined(buffer)) {
+                $scope.virtualScrollBuffer = parseInt(buffer, 10);
+            }
+
+            if (angular.isDefined(rowHeight)) {
+                $scope.virtualScrollRowHeight = parseInt(rowHeight, 10);
+            }
+
+            if (angular.isDefined(viewportHeight)) {
+                $scope.virtualScrollViewportStyle = {
+                    height: viewportHeight,
+                    overflowY: 'auto'
+                };
+            }
+        }
+
+        initVirtualScrollSettings();
 
                 if (angular.isFunction($scope.tree.on_select)) {
                     setTimeout(
@@ -2300,6 +2364,7 @@ function fnInitTreeDnD($timeout, $http, $compile, $parse, $window, $document, $t
                 getExpandOn();
             }
 
+            updateVirtualScrollNodes();
             if (!$attrs.columnDefs) {
                 getColDefs();
             }
@@ -3673,8 +3738,31 @@ angular.module('ntt.TreeDnD')
                     if (angular.isObject(node)) {
                         _target = tree.get_next_node(node);
                         if (_target) {
-                            return tree.select_node(_target);
-                        }
+             ' <tbody tree-dnd-nodes ng-if="!virtualScrollEnabled">',
+             ' <tbody tree-dnd-nodes ui-scroll-viewport class="tree-dnd-viewport" ',
+             '        ng-style="virtualScrollViewportStyle" ng-if="virtualScrollEnabled">',
+             '  <tr tree-dnd-node="node" ui-scroll="node in virtualScrollDatasource" ',
+             '       adapter="virtualScrollAdapter" buffer-size="virtualScrollBuffer" ',
+             '       item-size="virtualScrollRowHeight" ',
+             '       ng-click="onSelect(node)" ',
+             '       ng-class="(node.__selected__ ? \' active\':\'\')">',
+             '        <td tree-dnd-node-handle',
+             '          ng-style="expandingProperty.cellStyle ? expandingProperty.cellStyle : {\'padding-left\': $callbacks.calsIndent(node.__level__)}"',
+             '          ng-class="expandingProperty.cellClass"',
+             '          compile="expandingProperty.cellTemplate">',
+             '              <a data-nodrag>',
+             '                  <i ng-class="node.__icon_class__" ng-click="toggleExpand(node)"',
+             '                     class="tree-icon"></i>',
+             '              </a>',
+             '             {{node[expandingProperty.field] || node[expandingProperty]}}',
+             '        </td>',
+             '        <td ng-repeat="col in colDefinitions" ng-class="col.cellClass" ng-style="col.cellStyle"',
+             '            compile="col.cellTemplate">',
+             '            {{node[col.field]}}',
+             '        </td>',
+             '    </tr>',
+             '    </tbody>',
+})();
                     }
                 },
                 select_prev_node:                  function (node) {

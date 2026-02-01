@@ -32,6 +32,21 @@ function fnInitTreeDnD($timeout, $http, $compile, $parse, $window, $document, $t
 
         $scope.treeData   = [];
         $scope.tree_nodes = [];
+        $scope.virtualScrollEnabled = false;
+        $scope.virtualScrollBuffer = 20;
+        $scope.virtualScrollRowHeight = null;
+        $scope.virtualScrollViewportStyle = null;
+        $scope.virtualScrollNodes = [];
+        $scope.virtualScrollAdapter = {};
+        $scope.virtualScrollDatasource = {
+            get: function (index, count, success) {
+                var nodes = $scope.virtualScrollNodes || [];
+                if (index < 0) {
+                    index = 0;
+                }
+                success(nodes.slice(index, index + count));
+            }
+        };
 
         $scope.$class = angular.copy($TreeDnDClass);
         angular.extend(
@@ -137,6 +152,55 @@ function fnInitTreeDnD($timeout, $http, $compile, $parse, $window, $document, $t
                 }
             }
         };
+
+        function updateVirtualScrollNodes() {
+            if (!$scope.virtualScrollEnabled) {
+                return;
+            }
+            var visible = [],
+                i,
+                node,
+                len = $scope.tree_nodes ? $scope.tree_nodes.length : 0;
+
+            for (i = 0; i < len; i++) {
+                node = $scope.tree_nodes[i];
+                if (node && node.__visible__) {
+                    visible.push(node);
+                }
+            }
+            $scope.virtualScrollNodes = visible;
+            if ($scope.virtualScrollAdapter && angular.isFunction($scope.virtualScrollAdapter.reload)) {
+                $scope.virtualScrollAdapter.reload(0);
+            }
+        }
+
+        function initVirtualScrollSettings() {
+            var enabledExpr = $attrs.virtualScroll || $attrs.enableVirtualScroll,
+                buffer = $attrs.virtualScrollBuffer,
+                rowHeight = $attrs.virtualScrollRowHeight,
+                viewportHeight = $attrs.virtualScrollHeight;
+
+            if (angular.isDefined(enabledExpr)) {
+                $scope.virtualScrollEnabled = $scope.$eval(enabledExpr) !== false;
+            }
+
+            if (angular.isDefined(buffer)) {
+                $scope.virtualScrollBuffer = parseInt(buffer, 10);
+            }
+
+            if (angular.isDefined(rowHeight)) {
+                $scope.virtualScrollRowHeight = parseInt(rowHeight, 10);
+            }
+
+            if (angular.isDefined(viewportHeight)) {
+                $scope.virtualScrollViewportStyle = {
+                    height: viewportHeight,
+                    overflowY: 'auto'
+                };
+            }
+        }
+
+        initVirtualScrollSettings();
 
 
         var _fnGetHash    = function (node) {
@@ -1182,6 +1246,7 @@ function fnInitTreeDnD($timeout, $http, $compile, $parse, $window, $document, $t
 
             cleanup_removed_nodes(_tree_nodes);
             init_data(_tree_nodes);
+            updateVirtualScrollNodes();
 
             //removeIf(nodebug)
             console.timeEnd('Reload_Data');
